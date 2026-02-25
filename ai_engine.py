@@ -18,8 +18,8 @@
 # a naive alpha-beta — far more than parallel overhead could recover.
 
 import os
-import copy
 import time
+from opening_book import get_book_move
 
 # ---------------------------------------------------------------------------
 # MATERIAL VALUES (centipawns)
@@ -133,10 +133,15 @@ class AlphaBetaEngine:
     """
 
     def __init__(self, depth: int = 5, time_limit: float = 5.0):
-        self.max_depth  = depth
-        self.time_limit = time_limit
+        self.max_depth   = depth
+        self.time_limit  = time_limit
+        self.move_history = []          # list of (sr,sc,tr,tc) played so far
         self._reset_search_state()
         print(f"[AI] Alpha-Beta engine ready. depth={depth}, time={time_limit}s")
+
+    def record_move(self, move):
+        """Call this after every move (both sides) to keep move_history in sync."""
+        self.move_history.append(tuple(move[:4]))
 
     def _reset_search_state(self):
         self.transposition_table = {}
@@ -150,6 +155,13 @@ class AlphaBetaEngine:
     # ------------------------------------------------------------------
     def get_best_move(self, engine):
         """Return (sr, sc, tr, tc) for the best move."""
+
+        # --- Opening book lookup (instant, no search) ---
+        book_move = get_book_move(self.move_history)
+        if book_move is not None:
+            print(f"  [AI] Book move: {book_move}")
+            return book_move
+
         self._reset_search_state()
         self.start_time = time.time()
 
@@ -301,7 +313,9 @@ class AlphaBetaEngine:
                     self.history[hkey] = self.history.get(hkey, 0) + depth * depth
                 break
 
-        # TT store
+        # TT store (cap size to avoid GC pressure at deep searches)
+        if len(self.transposition_table) > 500_000:
+            self.transposition_table.clear()
         flag = TT_ALPHA if best_score <= original_alpha else \
                TT_BETA  if best_score >= beta else TT_EXACT
         self.transposition_table[key] = {
@@ -352,6 +366,9 @@ class AlphaBetaEngine:
         sw += self._mobility(engine, 'w') * 5
         sb += self._mobility(engine, 'b') * 5
 
+        sw += self._pawn_structure(engine, 'w')
+        sb += self._pawn_structure(engine, 'b')
+
         raw = sw - sb
         return raw if engine.turn == 'w' else -raw
 
@@ -363,6 +380,70 @@ class AlphaBetaEngine:
                     m, caps = engine.pseudo_moves(r, c)
                     count += len(m) + len(caps)
         return count
+
+    def _pawn_structure(self, engine, color):
+        """Score pawn structure: +passed pawns, -doubled, -isolated."""
+        enemy = 'b' if color == 'w' else 'w'
+        # Passed pawn bonus indexed by distance from promotion (0=closest)
+        # Rank 1 from promotion = biggest bonus
+        PASSED_BONUS = [0, 80, 60, 40, 30, 20, 10, 0]  # index = ranks from start
+        DOUBLED_PENALTY  = -20
+        ISOLATED_PENALTY = -15
+
+        # Collect pawn positions per file
+        own_files   = [[] for _ in range(8)]  # own_files[col] = list of rows
+        enemy_files = [[] for _ in range(8)]
+        for r in range(8):
+            for c in range(8):
+                p = engine.board[r][c]
+                if p == '--' or p[1] != 'P': continue
+                if p[0] == color:
+                    own_files[c].append(r)
+                else:
+                    enemy_files[c].append(r)
+
+        score = 0
+        for c in range(8):
+            pawns = own_files[c]
+            if not pawns:
+                continue
+
+            # --- Doubled pawn penalty ---
+            if len(pawns) > 1:
+                score += DOUBLED_PENALTY * (len(pawns) - 1)
+
+            # --- Isolated pawn penalty ---
+            has_neighbor = (
+                (c > 0 and own_files[c - 1]) or
+                (c < 7 and own_files[c + 1])
+            )
+            if not has_neighbor:
+                score += ISOLATED_PENALTY * len(pawns)
+
+            # --- Passed pawn bonus ---
+            for r in pawns:
+                if color == 'w':
+                    # White advances toward row 0; check no enemy pawn on
+                    # same or adjacent files with row < r (closer to promo)
+                    blocking_files = [f for f in (c-1, c, c+1) if 0 <= f <= 7]
+                    is_passed = all(
+                        not any(er < r for er in enemy_files[f])
+                        for f in blocking_files
+                    )
+                    ranks_from_start = r  # row 6 is start; row 1 is near promo
+                else:
+                    # Black advances toward row 7
+                    blocking_files = [f for f in (c-1, c, c+1) if 0 <= f <= 7]
+                    is_passed = all(
+                        not any(er > r for er in enemy_files[f])
+                        for f in blocking_files
+                    )
+                    ranks_from_start = 7 - r
+
+                if is_passed:
+                    score += PASSED_BONUS[min(ranks_from_start, 7)]
+
+        return score
 
     def _material_count(self, engine):
         return sum(
@@ -436,7 +517,7 @@ class AlphaBetaEngine:
             'board':         [row[:] for row in engine.board],
             'turn':          engine.turn,
             'en_passant':    engine.en_passant,
-            'castle_rights': copy.deepcopy(engine.castle_rights),
+            'castle_rights': {k: dict(v) for k, v in engine.castle_rights.items()},
             'king_moved':    dict(engine.king_moved),
             'game_over':     engine.game_over,
             'winner':        engine.winner,

@@ -15,7 +15,7 @@ screen.tracer(0)
 
 engine = ChessEngine()
 ui = ChessUI(screen)
-ai = AlphaBetaEngine(depth=5, time_limit=5.0)  # Multi-core alpha-beta, ~1700-1900 ELO
+ai = AlphaBetaEngine(depth=5, time_limit=5.0)
 
 ui.draw_board()
 ui.init_pieces(engine.board)
@@ -59,6 +59,8 @@ def play_ai_turn():
              engine.make_move(sr, sc, tr, tc, promoted_piece="Q")
         else:
              engine.make_move(sr, sc, tr, tc)
+
+        ai.record_move((sr, sc, tr, tc))   # keep opening book in sync
 
         ui.update_status(engine.turn, engine.game_over, engine.winner)
         screen.title("Chess: Human (White) vs AI [Alpha-Beta | depth=5 | multi-core]")
@@ -139,6 +141,8 @@ def on_click(x, y):
             engine.make_move(sr, sc, r, c, promoted_piece=promo_char)
         else:
             engine.make_move(sr, sc, r, c)
+
+        ai.record_move((sr, sc, r, c))   # keep opening book in sync
 
         # 2c. Reset State
         selected = None
