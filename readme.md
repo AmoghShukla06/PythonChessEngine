@@ -1,3 +1,4 @@
+
 # Hybrid Bitboard Chess Engine
 
 A high-performance Chess Engine built with a **Python** frontend and an ultra-fast **C++ Bitboard** backend. This project utilizes `turtle` for the graphical interface while delegating all the heavy lifting (search, move generation, and evaluation) to a highly optimized C++ engine bound to Python via `pybind11`.
@@ -85,3 +86,8 @@ python3 main.py
 - Click on a piece to select it (it will become highlighted).
 - Click on a valid square to move it.
 - As soon as your move executes, the C++ AI will start calculating. You can check your terminal to see real-time updates of the AI's search depth, evaluation score, nodes searched, and search time!
+=======
+this is a chess engine for aiml project,
+It aims to use reinforcement learning functionality
+Install the libraries:
+tkinter,turtle,numpy
