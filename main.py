@@ -1,9 +1,8 @@
 # main.py
 import turtle
 import time
-from engine import ChessEngine
+from chess_engine_wrapper import ChessEngine, AlphaBetaEngine
 from ui import ChessUI
-from ai_engine import AlphaBetaEngine
 
 # --- SETUP ---
 screen = turtle.Screen()
@@ -15,7 +14,7 @@ screen.tracer(0)
 
 engine = ChessEngine()
 ui = ChessUI(screen)
-ai = AlphaBetaEngine(depth=5, time_limit=5.0)
+ai = AlphaBetaEngine(depth=12, time_limit=5.0)
 
 ui.draw_board()
 ui.init_pieces(engine.board)
