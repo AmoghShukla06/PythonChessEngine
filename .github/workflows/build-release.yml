@@ -12,12 +12,13 @@ permissions:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             name: linux-x86_64
             artifact: ChessEngine-linux-x86_64
-          - os: macos-latest
+          - os: macos-13
             name: macos-x86_64
             artifact: ChessEngine-macos-x86_64
           - os: windows-latest
@@ -92,6 +93,8 @@ jobs:
             --hidden-import chess_engine_cpp \
             --hidden-import chess_engine_wrapper \
             --hidden-import ui \
+            --hidden-import tkinter \
+            --hidden-import _tkinter \
             --noconfirm --clean main.py
 
       - name: Build executable with PyInstaller (macOS)
@@ -105,6 +108,8 @@ jobs:
             --hidden-import chess_engine_cpp \
             --hidden-import chess_engine_wrapper \
             --hidden-import ui \
+            --hidden-import tkinter \
+            --hidden-import _tkinter \
             --noconfirm --clean main.py
 
       - name: Build executable with PyInstaller (Windows)
@@ -118,6 +123,8 @@ jobs:
             --hidden-import chess_engine_cpp `
             --hidden-import chess_engine_wrapper `
             --hidden-import ui `
+            --hidden-import tkinter `
+            --hidden-import _tkinter `
             --noconfirm --clean main.py
 
       # --- Package artifacts ---
