@@ -56,22 +56,26 @@ jobs:
             bitboard.cpp chess_engine.cpp \
             -o chess_engine_cpp$(python3 -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))")
 
+      - name: Setup MSVC (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
+
       - name: Compile C++ engine (Windows)
         if: runner.os == 'Windows'
-        shell: bash
+        shell: powershell
         run: |
-          PYBIND_INCLUDES=$(python -m pybind11 --includes)
-          PYTHON_INCLUDE=$(python -c "import sysconfig; print(sysconfig.get_path('include'))")
-          PYTHON_BASE=$(python -c "import sysconfig; print(sysconfig.get_config_var('installed_base'))")
+          $PYBIND_INCLUDES = (python -m pybind11 --includes) -replace '-I', '/I'
+          $PYTHON_INCLUDE = python -c "import sysconfig; print(sysconfig.get_path('include'))"
+          $PYTHON_BASE = python -c "import sysconfig; print(sysconfig.get_config_var('installed_base'))"
 
-          # Use g++ from MSYS2/MinGW that GitHub Actions provides
-          g++ -O3 -Wall -shared -std=c++17 \
-            $PYBIND_INCLUDES \
-            -I"$PYTHON_INCLUDE" \
-            bitboard.cpp chess_engine.cpp \
-            -L"$PYTHON_BASE/libs" \
-            -lpython312 \
-            -o chess_engine_cpp.pyd
+          cl /O2 /std:c++17 /EHsc /MD /LD `
+            $PYBIND_INCLUDES.Split(' ') `
+            /I"$PYTHON_INCLUDE" `
+            bitboard.cpp chess_engine.cpp `
+            /link /LIBPATH:"$PYTHON_BASE\libs" `
+            /OUT:chess_engine_cpp.pyd
 
       - name: Verify compiled module
         run: python -c "from chess_engine_cpp import ChessEngine; e = ChessEngine(); print('Board loaded:', len(e.board), 'rows'); print('Compilation OK!')"
@@ -105,15 +109,15 @@ jobs:
 
       - name: Build executable with PyInstaller (Windows)
         if: runner.os == 'Windows'
-        shell: bash
+        shell: powershell
         run: |
-          pyinstaller --name ChessEngine --onedir --windowed \
-            --add-binary "chess_engine_cpp.pyd;." \
-            --add-data "pieces;pieces" \
-            --add-data "background.gif;." \
-            --hidden-import chess_engine_cpp \
-            --hidden-import chess_engine_wrapper \
-            --hidden-import ui \
+          pyinstaller --name ChessEngine --onedir --windowed `
+            --add-binary "chess_engine_cpp.pyd;." `
+            --add-data "pieces;pieces" `
+            --add-data "background.gif;." `
+            --hidden-import chess_engine_cpp `
+            --hidden-import chess_engine_wrapper `
+            --hidden-import ui `
             --noconfirm --clean main.py
 
       # --- Package artifacts ---
@@ -131,7 +135,7 @@ jobs:
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
-        shell: bash
+        shell: powershell
         run: |
           cd dist
           7z a ../${{ matrix.artifact }}.zip ChessEngine/
