@@ -1,3 +1,21 @@
+# Python
 venv/
 __pycache__/
 *.pyc
+*.pyo
+
+# Compiled C++ modules
+*.so
+*.pyd
+*.dylib
+*.o
+*.obj
+
+# PyInstaller
+dist/
+build/
+*.spec
+
+# OS
+.DS_Store
+Thumbs.db

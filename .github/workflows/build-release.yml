@@ -1,0 +1,181 @@
+name: Build & Release Chess Engine
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux-x86_64
+            artifact: ChessEngine-linux-x86_64
+          - os: macos-latest
+            name: macos-x86_64
+            artifact: ChessEngine-macos-x86_64
+          - os: windows-latest
+            name: windows-x64
+            artifact: ChessEngine-windows-x64
+
+    runs-on: ${{ matrix.os }}
+    name: Build (${{ matrix.name }})
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: pip install pybind11 pyinstaller
+
+      # --- Compile C++ engine ---
+      - name: Compile C++ engine (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          g++ -O3 -Wall -shared -std=c++17 -fPIC \
+            $(python3 -m pybind11 --includes) \
+            bitboard.cpp chess_engine.cpp \
+            -o chess_engine_cpp$(python3 -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))")
+
+      - name: Compile C++ engine (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          clang++ -O3 -Wall -shared -std=c++17 -fPIC -undefined dynamic_lookup \
+            $(python3 -m pybind11 --includes) \
+            bitboard.cpp chess_engine.cpp \
+            -o chess_engine_cpp$(python3 -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))")
+
+      - name: Compile C++ engine (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          PYBIND_INCLUDES=$(python -m pybind11 --includes)
+          PYTHON_INCLUDE=$(python -c "import sysconfig; print(sysconfig.get_path('include'))")
+          PYTHON_BASE=$(python -c "import sysconfig; print(sysconfig.get_config_var('installed_base'))")
+
+          # Use g++ from MSYS2/MinGW that GitHub Actions provides
+          g++ -O3 -Wall -shared -std=c++17 \
+            $PYBIND_INCLUDES \
+            -I"$PYTHON_INCLUDE" \
+            bitboard.cpp chess_engine.cpp \
+            -L"$PYTHON_BASE/libs" \
+            -lpython312 \
+            -o chess_engine_cpp.pyd
+
+      - name: Verify compiled module
+        run: python -c "from chess_engine_cpp import ChessEngine; e = ChessEngine(); print('Board loaded:', len(e.board), 'rows'); print('Compilation OK!')"
+
+      # --- Build executable ---
+      - name: Build executable with PyInstaller (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          SO_FILE=$(ls chess_engine_cpp*.so)
+          pyinstaller --name ChessEngine --onedir --console \
+            --add-binary "$SO_FILE:." \
+            --add-data "pieces:pieces" \
+            --add-data "background.gif:." \
+            --hidden-import chess_engine_cpp \
+            --hidden-import chess_engine_wrapper \
+            --hidden-import ui \
+            --noconfirm --clean main.py
+
+      - name: Build executable with PyInstaller (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          SO_FILE=$(ls chess_engine_cpp*.so)
+          pyinstaller --name ChessEngine --onedir --windowed \
+            --add-binary "$SO_FILE:." \
+            --add-data "pieces:pieces" \
+            --add-data "background.gif:." \
+            --hidden-import chess_engine_cpp \
+            --hidden-import chess_engine_wrapper \
+            --hidden-import ui \
+            --noconfirm --clean main.py
+
+      - name: Build executable with PyInstaller (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          pyinstaller --name ChessEngine --onedir --windowed \
+            --add-binary "chess_engine_cpp.pyd;." \
+            --add-data "pieces;pieces" \
+            --add-data "background.gif;." \
+            --hidden-import chess_engine_cpp \
+            --hidden-import chess_engine_wrapper \
+            --hidden-import ui \
+            --noconfirm --clean main.py
+
+      # --- Package artifacts ---
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cd dist
+          tar czf ../${{ matrix.artifact }}.tar.gz ChessEngine/
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cd dist
+          zip -r ../${{ matrix.artifact }}.zip ChessEngine.app/ || zip -r ../${{ matrix.artifact }}.zip ChessEngine/
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cd dist
+          7z a ../${{ matrix.artifact }}.zip ChessEngine/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}.*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Chess Engine ${{ github.ref_name }}
+          body: |
+            ## ⬇️ Download Chess Engine
+
+            | Platform | Download |
+            |----------|----------|
+            | 🪟 **Windows** | `ChessEngine-windows-x64.zip` |
+            | 🍎 **macOS** | `ChessEngine-macos-x86_64.zip` |
+            | 🐧 **Linux** | `ChessEngine-linux-x86_64.tar.gz` |
+
+            ### How to run
+            1. Download the file for your operating system
+            2. Extract the archive
+            3. **Windows**: Double-click `ChessEngine.exe` inside the folder
+            4. **macOS**: Open `ChessEngine.app` or run `./ChessEngine` from terminal
+            5. **Linux**: Run `./ChessEngine` from terminal (or `chmod +x ChessEngine` first)
+
+            No Python, no compiler, no dependencies needed!
+          files: |
+            ChessEngine-*.zip
+            ChessEngine-*.tar.gz
+          draft: false
+          prerelease: false

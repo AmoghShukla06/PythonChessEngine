@@ -3,6 +3,37 @@
 
 A high-performance Chess Engine built with a **Python** frontend and an ultra-fast **C++ Bitboard** backend. This project utilizes `turtle` for the graphical interface while delegating all the heavy lifting (search, move generation, and evaluation) to a highly optimized C++ engine bound to Python via `pybind11`.
 
+---
+
+## ⬇️ Download & Run (No Setup Required!)
+
+**No Python, no compiler, no dependencies needed.** Just download and play!
+
+### 🪟 Windows
+1. Go to the [**Releases page**](https://github.com/AmoghShukla06/PythonChessEngine/releases/latest)
+2. Download **`ChessEngine-windows-x64.zip`**
+3. Extract the ZIP file
+4. Double-click **`ChessEngine.exe`** inside the `ChessEngine` folder
+5. Play! 🎉
+
+### 🍎 macOS
+1. Go to the [**Releases page**](https://github.com/AmoghShukla06/PythonChessEngine/releases/latest)
+2. Download **`ChessEngine-macos-x86_64.zip`**
+3. Extract and open the **`ChessEngine`** app
+4. If macOS blocks it: right-click → Open → confirm
+
+### 🐧 Linux
+1. Go to the [**Releases page**](https://github.com/AmoghShukla06/PythonChessEngine/releases/latest)
+2. Download **`ChessEngine-linux-x86_64.tar.gz`**
+3. Extract and run:
+```bash
+tar xzf ChessEngine-linux-x86_64.tar.gz
+cd ChessEngine
+./ChessEngine
+```
+
+---
+
 ## 🧠 How it Works
 
 The architecture is split into two primary components to maximize both usability and performance:
@@ -22,19 +53,30 @@ Currently, this engine evaluates positions at a theoretical **1.5+ Million Nodes
 
 ---
 
-## 🚀 How to Run the Project
+## 🔧 Build From Source (For Developers)
 
-Because the core engine is written in C++, you must compile it into a Python module before running the game.
+If you want to modify the engine or build the executable yourself:
 
 ### Prerequisites
 
-* **Python 3.8+** installed.
-* A **C++17 Compiler** (`g++` or `clang++` for Linux/Mac, `MinGW` or `MSVC` for Windows).
-* The `pybind11` Python package.
+* **Python 3.8+** installed
+* A **C++17 Compiler** (`g++` or `clang++` for Linux/Mac, `MinGW` or `MSVC` for Windows)
+* The `pybind11` Python package
 
-### 1. Setup Your Environment
+### Quick Build (Automatic)
 
-First, open your terminal/command prompt inside the `chess_engine` directory. We recommend using a virtual environment.
+The build script handles compilation + packaging into a standalone executable:
+
+```bash
+pip install pybind11 pyinstaller
+python build_exe.py
+```
+
+The executable will be created in `dist/ChessEngine/`.
+
+### Manual Build
+
+#### 1. Setup Your Environment
 
 **Windows:**
 ```cmd
@@ -50,26 +92,19 @@ source venv/bin/activate
 pip install pybind11
 ```
 
-### 2. Compile the C++ Engine
-
-You need to compile `bitboard.cpp` and `chess_engine.cpp` into a shared library that Python can load.
+#### 2. Compile the C++ Engine
 
 **Linux / macOS (using g++ or clang++):**
-Compile the code using the following command in your bash terminal:
 ```bash
 g++ -O3 -Wall -shared -std=c++17 -fPIC $(python3 -m pybind11 --includes) bitboard.cpp chess_engine.cpp -o chess_engine_cpp$(python3 -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))")
 ```
 
 **Windows (using MinGW / g++):**
-Ensure `g++` is in your PATH, then run:
 ```cmd
 g++ -O3 -Wall -shared -std=c++17 -fPIC -I"%VIRTUAL_ENV%\Include" %VIRTUAL_ENV%\Scripts\python.exe -m pybind11 --includes bitboard.cpp chess_engine.cpp -o chess_engine_cpp.pyd
 ```
-*(Alternatively, you can just run `python -m pybind11 --includes` to grab the include paths and compile manually, ensuring the output file is named `chess_engine_cpp.pyd`)*.
 
-### 3. Play the Game!
-
-Once the C++ compilation is successful, you will see a newly generated `.so` or `.pyd` file in your main directory. Now, simply run the Python game loop:
+#### 3. Play the Game!
 
 **Windows:**
 ```cmd
@@ -86,8 +121,17 @@ python3 main.py
 - Click on a piece to select it (it will become highlighted).
 - Click on a valid square to move it.
 - As soon as your move executes, the C++ AI will start calculating. You can check your terminal to see real-time updates of the AI's search depth, evaluation score, nodes searched, and search time!
-=======
-this is a chess engine for aiml project,
-It aims to use reinforcement learning functionality
-Install the libraries:
-tkinter,turtle,numpy
+
+---
+
+## 🚀 Creating a New Release (For Maintainers)
+
+To build executables for all platforms and publish a release:
+
+```bash
+git tag v1.0
+git push origin v1.0
+```
+
+This triggers GitHub Actions to automatically build Windows/macOS/Linux executables and attach them to a GitHub Release. Users can then download from the [Releases page](https://github.com/AmoghShukla06/PythonChessEngine/releases).
+

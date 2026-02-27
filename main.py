@@ -3,13 +3,14 @@ import turtle
 import time
 from chess_engine_wrapper import ChessEngine, AlphaBetaEngine
 from ui import ChessUI
+from resource_path import resource_path
 
 # --- SETUP ---
 screen = turtle.Screen()
 screen.setup(900,900)
 screen.title("Chess: Human (White) vs AI [Alpha-Beta | depth=5 | multi-core]")
 #screen.bgcolor("#2C3E50") # Darker, more modern background
-screen.bgpic("background.gif")
+screen.bgpic(resource_path("background.gif"))
 screen.tracer(0)
 
 engine = ChessEngine()

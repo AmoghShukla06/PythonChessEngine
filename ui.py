@@ -1,5 +1,6 @@
 # ui.py
 import turtle
+from resource_path import resource_path
 
 SQUARE = 90
 
@@ -19,7 +20,7 @@ class ChessUI:
         # ensure you have a folder named 'pieces' with gifs: wP.gif, bQ.gif, etc.
         for p in ["wP","wR","wN","wB","wQ","wK","bP","bR","bN","bB","bQ","bK"]:
             try:
-                self.screen.addshape(f"pieces/{p}.gif")
+                self.screen.addshape(resource_path(f"pieces/{p}.gif"))
             except:
                 print(f"Warning: Could not load pieces/{p}.gif")
     
@@ -77,7 +78,7 @@ class ChessUI:
                 if board[r][c] != "--":
                     t = turtle.Turtle()
                     t.penup()
-                    t.shape(f"pieces/{board[r][c]}.gif")
+                    t.shape(resource_path(f"pieces/{board[r][c]}.gif"))
                     x,y = self.board_to_screen(r,c)
                     t.goto(x+SQUARE/2, y-SQUARE/2)
                     t.showturtle()
@@ -102,7 +103,7 @@ class ChessUI:
         self.remove_piece(r, c)
         t = turtle.Turtle()
         t.penup()
-        t.shape(f"pieces/{new_piece_code}.gif")
+        t.shape(resource_path(f"pieces/{new_piece_code}.gif"))
         x,y = self.board_to_screen(r,c)
         t.goto(x+SQUARE/2, y-SQUARE/2)
         t.showturtle()
