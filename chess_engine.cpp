@@ -290,25 +290,25 @@ public:
 
     U64 n = pieces[color][N];
     while (n) {
-      int sq = __builtin_ctzll(n);
+      int sq = bb_ctzll(n);
       attacks |= knight_attacks[sq];
       n &= n - 1;
     }
 
     U64 k = pieces[color][K];
     if (k)
-      attacks |= king_attacks[__builtin_ctzll(k)];
+      attacks |= king_attacks[bb_ctzll(k)];
 
     U64 b = pieces[color][B] | pieces[color][Q];
     while (b) {
-      int sq = __builtin_ctzll(b);
+      int sq = bb_ctzll(b);
       attacks |= get_bishop_attacks(sq, occupied);
       b &= b - 1;
     }
 
     U64 r = pieces[color][R] | pieces[color][Q];
     while (r) {
-      int sq = __builtin_ctzll(r);
+      int sq = bb_ctzll(r);
       attacks |= get_rook_attacks(sq, occupied);
       r &= r - 1;
     }
@@ -345,7 +345,7 @@ public:
     U64 k = pieces[color][K];
     if (!k)
       return false;
-    return is_attacked(__builtin_ctzll(k), enemy_col(color));
+    return is_attacked(bb_ctzll(k), enemy_col(color));
   }
 
   // Engine State Backup for Search
@@ -407,8 +407,8 @@ public:
         int tc_save = turn_col;
 
         make_move_fast(r, c, tr, tc, get<4>(m));
-        bool in_check_after = is_attacked(__builtin_ctzll(pieces[p_color][K]),
-                                          enemy_col(p_color));
+        bool in_check_after =
+            is_attacked(bb_ctzll(pieces[p_color][K]), enemy_col(p_color));
         restore_state(st, tc_save);
 
         if (!in_check_after) {
@@ -437,7 +437,7 @@ public:
       int tc_save = turn_col;
       make_move_fast(get<0>(m), get<1>(m), get<2>(m), get<3>(m), get<4>(m));
       bool in_check_after =
-          is_attacked(__builtin_ctzll(pieces[color][K]), enemy_col(color));
+          is_attacked(bb_ctzll(pieces[color][K]), enemy_col(color));
       restore_state(st, tc_save);
       if (!in_check_after)
         return true;

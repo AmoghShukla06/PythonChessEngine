@@ -182,7 +182,7 @@ public:
         int tc = engine.turn_col;
         engine.make_move_fast(get<0>(m), get<1>(m), get<2>(m), get<3>(m),
                               get<4>(m));
-        bool in_chk = engine.is_attacked(__builtin_ctzll(engine.pieces[tc][K]),
+        bool in_chk = engine.is_attacked(bb_ctzll(engine.pieces[tc][K]),
                                          engine.enemy_col(tc));
         engine.restore_state(st, tc);
         if (!in_chk) {
@@ -212,7 +212,7 @@ public:
                             get<3>(move), get<4>(move));
 
       // Validate move
-      if (engine.is_attacked(__builtin_ctzll(engine.pieces[color][K]),
+      if (engine.is_attacked(bb_ctzll(engine.pieces[color][K]),
                              engine.enemy_col(color))) {
         engine.restore_state(st, tc);
         continue;
@@ -262,10 +262,8 @@ public:
     if (!in_check && depth >= 3) {
       int total_mat = 0;
       for (int i = 0; i < 5; i++) {
-        total_mat +=
-            __builtin_popcountll(engine.pieces[WHITE][i]) * PIECE_VALUE[i];
-        total_mat +=
-            __builtin_popcountll(engine.pieces[BLACK][i]) * PIECE_VALUE[i];
+        total_mat += count_bits(engine.pieces[WHITE][i]) * PIECE_VALUE[i];
+        total_mat += count_bits(engine.pieces[BLACK][i]) * PIECE_VALUE[i];
       }
       if (total_mat > 1500) {
         int R = 2;
@@ -295,7 +293,7 @@ public:
       bool is_capture = (engine.occupied & (1ULL << (tr * 8 + tc_sq))) != 0;
 
       engine.make_move_fast(get<0>(move), get<1>(move), tr, tc_sq, promo);
-      if (engine.is_attacked(__builtin_ctzll(engine.pieces[color][K]),
+      if (engine.is_attacked(bb_ctzll(engine.pieces[color][K]),
                              engine.enemy_col(color))) {
         engine.restore_state(st, tc);
         continue;
@@ -380,7 +378,7 @@ public:
       int tc_save = engine.turn_col;
 
       engine.make_move_fast(get<0>(move), get<1>(move), tr, tc, get<4>(move));
-      if (engine.is_attacked(__builtin_ctzll(engine.pieces[color][K]),
+      if (engine.is_attacked(bb_ctzll(engine.pieces[color][K]),
                              engine.enemy_col(color))) {
         engine.restore_state(st, tc_save);
         continue;
@@ -403,8 +401,8 @@ public:
     int sw = 0, sb = 0;
     int mat_w = 0, mat_b = 0;
     for (int i = 0; i < 5; i++) {
-      mat_w += __builtin_popcountll(engine.pieces[WHITE][i]) * PIECE_VALUE[i];
-      mat_b += __builtin_popcountll(engine.pieces[BLACK][i]) * PIECE_VALUE[i];
+      mat_w += count_bits(engine.pieces[WHITE][i]) * PIECE_VALUE[i];
+      mat_b += count_bits(engine.pieces[BLACK][i]) * PIECE_VALUE[i];
     }
     bool endgame = (mat_w + mat_b) < 1500;
 
@@ -415,7 +413,7 @@ public:
       int score = 0;
       U64 bb = engine.pieces[color][p_type];
       while (bb) {
-        int sq = __builtin_ctzll(bb);
+        int sq = bb_ctzll(bb);
         score += table[color == WHITE ? sq : (sq ^ 56)];
         bb &= bb - 1;
       }

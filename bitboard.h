@@ -5,6 +5,10 @@
 #include <string>
 #include <vector>
 
+#ifdef _MSC_VER
+#include <intrin.h>
+#endif
+
 typedef uint64_t U64;
 
 // Board representation enum
@@ -12,12 +16,6 @@ enum Piece { P, N, B, R, Q, K };
 enum Color { WHITE, BLACK };
 
 static inline int square_idx(int r, int c) {
-  // Top-left (0,0) is A8 in conventional chess if we consider row 0 as rank 8,
-  // col 0 as file A Traditional engine uses Rank 1 as lower bits. Let's map our
-  // r, c directly for now: r=0..7, c=0..7 -> r*8 + c (0 is top-left A8, 63 is
-  // bottom-right H1) Actually standard bitboard is A1=0, H8=63. Let's stick to
-  // A8=0, H1=63 for easier matching with current UI logic where board[r][c] r=0
-  // is top.
   return r * 8 + c;
 }
 
@@ -25,8 +23,30 @@ static inline U64 set_bit(U64 bb, int sq) { return bb | (1ULL << sq); }
 static inline U64 get_bit(U64 bb, int sq) { return bb & (1ULL << sq); }
 static inline U64 pop_bit(U64 bb, int sq) { return bb & ~(1ULL << sq); }
 
+// --- Cross-platform bit intrinsics ---
+#ifdef _MSC_VER
+static inline int count_bits(U64 bb) { return (int)__popcnt64(bb); }
+static inline int get_ls1b(U64 bb) {
+  unsigned long idx;
+  _BitScanForward64(&idx, bb);
+  return (int)idx;
+}
+static inline int bb_ctzll(U64 bb) {
+  unsigned long idx;
+  _BitScanForward64(&idx, bb);
+  return (int)idx;
+}
+static inline int bb_clzll(U64 bb) {
+  unsigned long idx;
+  _BitScanReverse64(&idx, bb);
+  return 63 - (int)idx;
+}
+#else
 static inline int count_bits(U64 bb) { return __builtin_popcountll(bb); }
 static inline int get_ls1b(U64 bb) { return __builtin_ctzll(bb); }
+static inline int bb_ctzll(U64 bb) { return __builtin_ctzll(bb); }
+static inline int bb_clzll(U64 bb) { return __builtin_clzll(bb); }
+#endif
 
 // Pre-calculated tables
 extern U64 pawn_attacks[2][64];

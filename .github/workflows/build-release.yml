@@ -18,9 +18,6 @@ jobs:
           - os: ubuntu-latest
             name: linux-x86_64
             artifact: ChessEngine-linux-x86_64
-          - os: macos-13
-            name: macos-x86_64
-            artifact: ChessEngine-macos-x86_64
           - os: windows-latest
             name: windows-x64
             artifact: ChessEngine-windows-x64
@@ -45,14 +42,6 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           g++ -O3 -Wall -shared -std=c++17 -fPIC \
-            $(python3 -m pybind11 --includes) \
-            bitboard.cpp chess_engine.cpp \
-            -o chess_engine_cpp$(python3 -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))")
-
-      - name: Compile C++ engine (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          clang++ -O3 -Wall -shared -std=c++17 -fPIC -undefined dynamic_lookup \
             $(python3 -m pybind11 --includes) \
             bitboard.cpp chess_engine.cpp \
             -o chess_engine_cpp$(python3 -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))")
@@ -97,21 +86,6 @@ jobs:
             --hidden-import _tkinter \
             --noconfirm --clean main.py
 
-      - name: Build executable with PyInstaller (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          SO_FILE=$(ls chess_engine_cpp*.so)
-          pyinstaller --name ChessEngine --onedir --windowed \
-            --add-binary "$SO_FILE:." \
-            --add-data "pieces:pieces" \
-            --add-data "background.gif:." \
-            --hidden-import chess_engine_cpp \
-            --hidden-import chess_engine_wrapper \
-            --hidden-import ui \
-            --hidden-import tkinter \
-            --hidden-import _tkinter \
-            --noconfirm --clean main.py
-
       - name: Build executable with PyInstaller (Windows)
         if: runner.os == 'Windows'
         shell: powershell
@@ -133,12 +107,6 @@ jobs:
         run: |
           cd dist
           tar czf ../${{ matrix.artifact }}.tar.gz ChessEngine/
-
-      - name: Package (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          cd dist
-          zip -r ../${{ matrix.artifact }}.zip ChessEngine.app/ || zip -r ../${{ matrix.artifact }}.zip ChessEngine/
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
@@ -174,15 +142,13 @@ jobs:
             | Platform | Download |
             |----------|----------|
             | 🪟 **Windows** | `ChessEngine-windows-x64.zip` |
-            | 🍎 **macOS** | `ChessEngine-macos-x86_64.zip` |
             | 🐧 **Linux** | `ChessEngine-linux-x86_64.tar.gz` |
 
             ### How to run
             1. Download the file for your operating system
             2. Extract the archive
             3. **Windows**: Double-click `ChessEngine.exe` inside the folder
-            4. **macOS**: Open `ChessEngine.app` or run `./ChessEngine` from terminal
-            5. **Linux**: Run `./ChessEngine` from terminal (or `chmod +x ChessEngine` first)
+            4. **Linux**: Run `./ChessEngine` from terminal (or `chmod +x ChessEngine` first)
 
             No Python, no compiler, no dependencies needed!
           files: |
@@ -190,3 +156,4 @@ jobs:
             ChessEngine-*.tar.gz
           draft: false
           prerelease: false
+

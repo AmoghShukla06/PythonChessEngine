@@ -14,7 +14,7 @@ void init_leapers() {
   for (int sq = 0; sq < 64; sq++) {
     int r = sq / 8;
     int c = sq % 8;
-    //U64 sq_bb = 1ULL << sq;
+    // U64 sq_bb = 1ULL << sq;
 
     // Pawns
     pawn_attacks[WHITE][sq] = 0;
@@ -94,10 +94,10 @@ U64 get_ray_attacks(int sq, U64 blockers, int dir) {
     int blocker_sq;
     // If direction increases index (South, East, SE, SW), find first LSB
     if (dir == DIR_S || dir == DIR_E || dir == DIR_SE || dir == DIR_SW) {
-      blocker_sq = __builtin_ctzll(blocker_ray);
+      blocker_sq = bb_ctzll(blocker_ray);
     } else {
       // Direction decreases index (North, West, NW, NE), find first MSB
-      blocker_sq = 63 - __builtin_clzll(blocker_ray);
+      blocker_sq = 63 - bb_clzll(blocker_ray);
     }
     attacks ^= ray_attacks[blocker_sq][dir];
   }
