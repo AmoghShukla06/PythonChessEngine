@@ -7,15 +7,28 @@ from resource_path import resource_path
 
 # --- SETUP ---
 screen = turtle.Screen()
-screen.setup(900,900)
-screen.title("Chess: Human (White) vs AI [Alpha-Beta | depth=5 | multi-core]")
-#screen.bgcolor("#2C3E50") # Darker, more modern background
+screen.setup(1100, 900)  # Wider to accommodate captured pieces panel
+screen.title("Chess: Human vs AI [Alpha-Beta | depth=12]")
 screen.bgpic(resource_path("background.gif"))
 screen.tracer(0)
+
+# Make window smoothly resizable (cross-platform: Linux + Windows)
+canvas = screen.getcanvas()
+root = canvas.winfo_toplevel()
+root.resizable(True, True)
+root.minsize(800, 700)
 
 engine = ChessEngine()
 ui = ChessUI(screen)
 ai = AlphaBetaEngine(depth=12, time_limit=5.0)
+
+# --- COLOR CHOICE ---
+human_color = ui.show_start_menu()  # 'w' or 'b'
+ai_color = "b" if human_color == "w" else "w"
+
+# If human is black, flip the board so black is at bottom
+if human_color == "b":
+    ui.flipped = True
 
 ui.draw_board()
 ui.init_pieces(engine.board)
@@ -26,72 +39,106 @@ selected = None
 valid_moves = []
 capture_moves = []
 
+# Track captured pieces and last move
+white_captured = []  # pieces white has captured (black piece codes like "bP")
+black_captured = []  # pieces black has captured (white piece codes like "wP")
+last_move = None     # (sr, sc, tr, tc) of the most recent move, for highlighting
+
+
+def refresh_captured():
+    ui.draw_captured_pieces(white_captured, black_captured)
+
+
 # --- AI TURN HANDLER ---
 def play_ai_turn():
-    if engine.game_over: return
+    global last_move
+    if engine.game_over:
+        return
 
     screen.title("Chess - AI is thinking [Alpha-Beta]...")
     screen.update()
-    
-    # 1. AI decides
+
+    # AI decides
     move = ai.get_best_move(engine)
-    
+
     if move:
         sr, sc, tr, tc = move
-        
-        # 2. Visual Update
+
+        # Track captures
         target_piece = engine.board[tr][tc]
+        is_en_passant = (engine.board[sr][sc][1] == "P" and
+                         engine.en_passant == (tr, tc) and
+                         target_piece == "--")
+
         if target_piece != "--":
+            if ai_color == "w":
+                white_captured.append(target_piece)
+            else:
+                black_captured.append(target_piece)
             ui.remove_piece(tr, tc)
-        elif engine.board[sr][sc][1] == "P" and engine.en_passant == (tr, tc):
-            ui.remove_piece(sr, tc) # En Passant visual fix
+        elif is_en_passant:
+            ep_piece = engine.board[sr][tc]
+            if ai_color == "w":
+                white_captured.append(ep_piece)
+            else:
+                black_captured.append(ep_piece)
+            ui.remove_piece(sr, tc)
 
         ui.move_piece(sr, sc, tr, tc)
-        
-        # Handling Castling Visuals for AI
+
+        # Castling visuals
         if engine.board[sr][sc][1] == "K" and abs(tc - sc) == 2:
-            if tc > sc: ui.move_piece(sr, 7, sr, 5) # Kingside
-            else: ui.move_piece(sr, 0, sr, 3) # Queenside
+            if tc > sc:
+                ui.move_piece(sr, 7, sr, 5)
+            else:
+                ui.move_piece(sr, 0, sr, 3)
 
-        # Handling Promotion for AI (Always Queen for now)
+        # Promotion (AI always queens)
         if engine.board[sr][sc][1] == "P" and (tr == 0 or tr == 7):
-             ui.promote_piece_visual(tr, tc, "bQ")
-             engine.make_move(sr, sc, tr, tc, promoted_piece="Q")
+            promo_color = "b" if ai_color == "b" else "w"
+            ui.promote_piece_visual(tr, tc, f"{promo_color}Q")
+            engine.make_move(sr, sc, tr, tc, promoted_piece="Q")
         else:
-             engine.make_move(sr, sc, tr, tc)
+            engine.make_move(sr, sc, tr, tc)
 
-        ai.record_move((sr, sc, tr, tc))   # keep opening book in sync
+        ai.record_move((sr, sc, tr, tc))
 
+        # Highlight the AI's last move
+        last_move = (sr, sc, tr, tc)
+        ui.highlight_last_move(sr, sc, tr, tc)
+
+        refresh_captured()
         ui.update_status(engine.turn, engine.game_over, engine.winner)
-        screen.title("Chess: Human (White) vs AI [Alpha-Beta | depth=5 | multi-core]")
+        screen.title("Chess: Human vs AI [Alpha-Beta | depth=12]")
         screen.update()
     else:
         print("AI has no legal moves (Stalemate/Checkmate)")
 
+
 # --- HUMAN CLICK HANDLER ---
 def on_click(x, y):
-    global selected, valid_moves, capture_moves
-    
+    global selected, valid_moves, capture_moves, last_move
+
     # Disable clicks if it's AI's turn or game over
-    if engine.game_over or engine.turn == "b":
+    if engine.game_over or engine.turn != human_color:
         return
-    
-    r, c = screen_to_board(x, y)
-    
+
+    r, c = ui.screen_to_board(x, y)
+
     # Click outside board
     if r is None or c is None:
         selected = None
         ui.clear_highlights()
         return
 
+    human_prefix = human_color
+
     # 1. SELECT A PIECE
     if selected is None:
-        if engine.board[r][c].startswith("w"):
+        if engine.board[r][c].startswith(human_prefix):
             selected = (r, c)
-            # Get legal moves for this piece
             valid_moves, capture_moves = engine.legal_moves(r, c)
-            
-            # Highlight Selected Square + Moves
+
             ui.highlight(r, c, "yellow")
             for (mr, mc) in valid_moves:
                 ui.highlight(mr, mc, "green")
@@ -102,65 +149,93 @@ def on_click(x, y):
     # 2. MOVE THE PIECE
     else:
         sr, sc = selected
-        
-        # If clicked same square or invalid move, deselect
+
+        # Deselect if same square or invalid
         if (r, c) == (sr, sc) or ((r, c) not in valid_moves and (r, c) not in capture_moves):
             selected = None
             valid_moves = []
             capture_moves = []
             ui.clear_highlights()
-            # Allow re-selecting immediately if clicked another white piece
-            if engine.board[r][c].startswith("w"):
-                on_click(x, y) 
+            if engine.board[r][c].startswith(human_prefix):
+                on_click(x, y)
             return
-        
-        # Valid Move Detected
-        # 2a. Visual Update
+
+        # Track captures
         target_piece = engine.board[r][c]
+        is_en_passant = (engine.board[sr][sc][1] == "P" and
+                         (r, c) == engine.en_passant and
+                         target_piece == "--")
+
         if target_piece != "--":
+            if human_color == "w":
+                white_captured.append(target_piece)
+            else:
+                black_captured.append(target_piece)
             ui.remove_piece(r, c)
-        # En Passant Visual
-        elif engine.board[sr][sc][1] == "P" and (r, c) == engine.en_passant:
-            ui.remove_piece(sr, c) # Remove pawn behind
+        elif is_en_passant:
+            ep_piece = engine.board[sr][c]
+            if human_color == "w":
+                white_captured.append(ep_piece)
+            else:
+                black_captured.append(ep_piece)
+            ui.remove_piece(sr, c)
 
         ui.move_piece(sr, sc, r, c)
-        
-        # Castling Visuals (Human)
+
+        # Castling visuals
         if engine.board[sr][sc][1] == "K" and abs(c - sc) == 2:
-            if c > sc: ui.move_piece(sr, 7, sr, 5) # Kingside
-            else: ui.move_piece(sr, 0, sr, 3) # Queenside
+            if c > sc:
+                ui.move_piece(sr, 7, sr, 5)
+            else:
+                ui.move_piece(sr, 0, sr, 3)
 
         ui.clear_highlights()
 
-        # 2b. Engine Update
-        # Promotion Check
+        # Promotion check
         if engine.board[sr][sc][1] == "P" and (r == 0 or r == 7):
             promo_char = ui.get_promotion_choice(engine.turn)
-            # Visual promote
             ui.promote_piece_visual(r, c, engine.turn + promo_char)
             engine.make_move(sr, sc, r, c, promoted_piece=promo_char)
         else:
             engine.make_move(sr, sc, r, c)
 
-        ai.record_move((sr, sc, r, c))   # keep opening book in sync
+        ai.record_move((sr, sc, r, c))
 
-        # 2c. Reset State
+        # Highlight human's last move
+        last_move = (sr, sc, r, c)
+        ui.highlight_last_move(sr, sc, r, c)
+
+        # Reset selection state
         selected = None
         valid_moves = []
         capture_moves = []
-        
+
+        refresh_captured()
         ui.update_status(engine.turn, engine.game_over, engine.winner)
         screen.update()
 
-        # 3. Trigger AI
-        if not engine.game_over and engine.turn == "b":
+        # Trigger AI
+        if not engine.game_over and engine.turn == ai_color:
             screen.ontimer(play_ai_turn, 500)
 
-# --- HELPER (Copy from your main.py) ---
-def screen_to_board(x, y):
-    c = int((x + 4*90) // 90)
-    r = int((4*90 - y) // 90)
-    return (r, c) if 0 <= r < 8 and 0 <= c < 8 else (None, None)
 
+# --- KEYBOARD BINDINGS ---
+def on_flip():
+    """Toggle board flip and redraw."""
+    ui.flip_board(engine.board)
+    if last_move:
+        ui.redraw_last_move(*last_move)
+    refresh_captured()
+    ui.update_status(engine.turn, engine.game_over, engine.winner)
+    screen.update()
+
+
+screen.listen()
+screen.onkey(on_flip, "f")
 screen.onclick(on_click)
+
+# If human chose black, AI plays first as white
+if human_color == "b":
+    screen.ontimer(play_ai_turn, 1000)
+
 turtle.done()
