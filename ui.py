@@ -84,13 +84,8 @@ class ChessUI:
         """Toggle the flipped flag and redraw everything."""
         self.flipped = not self.flipped
         self.draw_board()
-        self._redraw_pieces(board)
-
-    def _redraw_pieces(self, board):
-        """Reposition all existing piece turtles to match current flip state."""
-        for (r, c), t in self.piece_map.items():
-            x, y = self.board_to_screen(r, c)
-            t.goto(x + SQUARE / 2, y - SQUARE / 2)
+        # Recreate pieces so they layer on top of the redrawn board squares
+        self.init_pieces(board)
 
     # --- Drawing ---
 
