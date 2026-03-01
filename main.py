@@ -2,13 +2,10 @@
 import sys
 import platform
 
-# --- Windows High-DPI fix (must be called BEFORE any tkinter/turtle imports) ---
-if platform.system() == "Windows":
-    try:
-        import ctypes
-        ctypes.windll.shcore.SetProcessDpiAwareness(1)
-    except Exception:
-        pass
+# Note: Removed SetProcessDpiAwareness() — it caused the window to render at
+# native physical resolution on high-DPI displays, making UI elements too small
+# and text to overlap borders.  Windows' default DPI virtualization handles
+# scaling correctly for turtle/tkinter apps.
 
 import turtle
 import time

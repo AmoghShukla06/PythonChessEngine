@@ -308,9 +308,11 @@ public:
       }
       if (total_mat > 1500) {
         int R = 2;
+        auto nm_st = engine.save_state();
+        int nm_tc = engine.turn_col;
         engine.turn_col = engine.enemy_col(color);
         int null_score = -_negamax(engine, depth - 1 - R, -beta, -beta + 1);
-        engine.turn_col = color;
+        engine.restore_state(nm_st, nm_tc);
         if (null_score >= beta)
           return beta;
       }
