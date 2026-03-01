@@ -14,3 +14,9 @@ class AlphaBetaEngine:
         
     def get_best_move(self, engine):
         return self._cpp_engine.get_best_move(engine)
+
+    def set_depth(self, depth):
+        self._cpp_engine.max_depth = depth
+
+    def set_time_limit(self, limit):
+        self._cpp_engine.time_limit = limit

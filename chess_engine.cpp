@@ -592,6 +592,8 @@ PYBIND11_MODULE(chess_engine_cpp, m) {
   py::class_<AlphaBetaEngine>(m, "AlphaBetaEngine")
       .def(py::init<int, double>(), py::arg("depth") = 5,
            py::arg("time_limit") = 5.0)
+      .def_readwrite("max_depth", &AlphaBetaEngine::max_depth)
+      .def_readwrite("time_limit", &AlphaBetaEngine::time_limit)
       .def("record_move", &AlphaBetaEngine::record_move)
       .def("get_best_move", &AlphaBetaEngine::get_best_move);
 }

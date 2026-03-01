@@ -15,9 +15,7 @@ typedef uint64_t U64;
 enum Piece { P, N, B, R, Q, K };
 enum Color { WHITE, BLACK };
 
-static inline int square_idx(int r, int c) {
-  return r * 8 + c;
-}
+static inline int square_idx(int r, int c) { return r * 8 + c; }
 
 static inline U64 set_bit(U64 bb, int sq) { return bb | (1ULL << sq); }
 static inline U64 get_bit(U64 bb, int sq) { return bb & (1ULL << sq); }
@@ -73,5 +71,16 @@ U64 get_rook_attacks(int sq, U64 blockers);
 U64 get_queen_attacks(int sq, U64 blockers);
 
 enum Direction { DIR_N, DIR_S, DIR_E, DIR_W, DIR_NE, DIR_NW, DIR_SE, DIR_SW };
+
+// --- Zobrist Hashing ---
+extern U64 zobrist_pieces[2][6][64];
+extern U64 zobrist_ep[64];
+extern U64 zobrist_castling[16];
+extern U64 zobrist_side;
+void init_zobrist();
+
+// --- File masks for pawn evaluation ---
+extern const U64 FILE_MASKS[8];
+extern const U64 ADJ_FILE_MASKS[8];
 
 #endif

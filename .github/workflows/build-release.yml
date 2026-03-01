@@ -94,6 +94,7 @@ jobs:
             --add-binary "chess_engine_cpp.pyd;." `
             --add-data "pieces;pieces" `
             --add-data "background.gif;." `
+            --manifest "dpi_manifest.xml" `
             --hidden-import chess_engine_cpp `
             --hidden-import chess_engine_wrapper `
             --hidden-import ui `

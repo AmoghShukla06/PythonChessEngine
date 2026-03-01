@@ -85,7 +85,57 @@ void init_sliders() {
 void init_all_bitboards() {
   init_leapers();
   init_sliders();
+  init_zobrist();
 }
+
+// --- Zobrist Hashing ---
+U64 zobrist_pieces[2][6][64];
+U64 zobrist_ep[64];
+U64 zobrist_castling[16];
+U64 zobrist_side;
+
+static U64 xorshift64(U64 &state) {
+  state ^= state << 13;
+  state ^= state >> 7;
+  state ^= state << 17;
+  return state;
+}
+
+void init_zobrist() {
+  U64 seed = 0x12345678ABCDEF01ULL;
+  for (int color = 0; color < 2; color++)
+    for (int piece = 0; piece < 6; piece++)
+      for (int sq = 0; sq < 64; sq++)
+        zobrist_pieces[color][piece][sq] = xorshift64(seed);
+  for (int sq = 0; sq < 64; sq++)
+    zobrist_ep[sq] = xorshift64(seed);
+  for (int i = 0; i < 16; i++)
+    zobrist_castling[i] = xorshift64(seed);
+  zobrist_side = xorshift64(seed);
+}
+
+// --- File masks for pawn structure eval ---
+const U64 FILE_MASKS[8] = {
+    0x0101010101010101ULL, // A
+    0x0202020202020202ULL, // B
+    0x0404040404040404ULL, // C
+    0x0808080808080808ULL, // D
+    0x1010101010101010ULL, // E
+    0x2020202020202020ULL, // F
+    0x4040404040404040ULL, // G
+    0x8080808080808080ULL  // H
+};
+
+const U64 ADJ_FILE_MASKS[8] = {
+    FILE_MASKS[1],                 // A: only B
+    FILE_MASKS[0] | FILE_MASKS[2], // B: A+C
+    FILE_MASKS[1] | FILE_MASKS[3], // C: B+D
+    FILE_MASKS[2] | FILE_MASKS[4], // D: C+E
+    FILE_MASKS[3] | FILE_MASKS[5], // E: D+F
+    FILE_MASKS[4] | FILE_MASKS[6], // F: E+G
+    FILE_MASKS[5] | FILE_MASKS[7], // G: F+H
+    FILE_MASKS[6]                  // H: only G
+};
 
 U64 get_ray_attacks(int sq, U64 blockers, int dir) {
   U64 attacks = ray_attacks[sq][dir];

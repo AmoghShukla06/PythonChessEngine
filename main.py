@@ -1,4 +1,15 @@
 # main.py
+import sys
+import platform
+
+# --- Windows High-DPI fix (must be called BEFORE any tkinter/turtle imports) ---
+if platform.system() == "Windows":
+    try:
+        import ctypes
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)
+    except Exception:
+        pass
+
 import turtle
 import time
 from chess_engine_wrapper import ChessEngine, AlphaBetaEngine
@@ -8,7 +19,8 @@ from resource_path import resource_path
 # --- SETUP ---
 screen = turtle.Screen()
 screen.setup(1100, 900)  # Wider to accommodate captured pieces panel
-screen.title("Chess: Human vs AI [Alpha-Beta | depth=12]")
+screen.title("Chess: Human vs AI [Alpha-Beta]")
+screen.bgcolor("#1a1a2e")  # Dark background fills entire window
 screen.bgpic(resource_path("background.gif"))
 screen.tracer(0)
 
@@ -18,13 +30,21 @@ root = canvas.winfo_toplevel()
 root.resizable(True, True)
 root.minsize(800, 700)
 
+# Make canvas expand to fill the window when resized
+root.rowconfigure(0, weight=1)
+root.columnconfigure(0, weight=1)
+canvas.grid(sticky="nsew")
+
 engine = ChessEngine()
 ui = ChessUI(screen)
-ai = AlphaBetaEngine(depth=12, time_limit=5.0)
 
-# --- COLOR CHOICE ---
+# --- PRE-GAME MENUS ---
 human_color = ui.show_start_menu()  # 'w' or 'b'
 ai_color = "b" if human_color == "w" else "w"
+
+chosen_depth = ui.show_depth_menu()  # 1-20
+ai = AlphaBetaEngine(depth=chosen_depth, time_limit=99999.0)  # No time limit
+screen.title("Chess: Human vs AI")
 
 # If human is black, flip the board so black is at bottom
 if human_color == "b":
@@ -55,7 +75,7 @@ def play_ai_turn():
     if engine.game_over:
         return
 
-    screen.title("Chess - AI is thinking [Alpha-Beta]...")
+    screen.title("Chess - AI is thinking...")
     screen.update()
 
     # AI decides
@@ -109,7 +129,7 @@ def play_ai_turn():
 
         refresh_captured()
         ui.update_status(engine.turn, engine.game_over, engine.winner)
-        screen.title("Chess: Human vs AI [Alpha-Beta | depth=12]")
+        screen.title("Chess: Human vs AI")
         screen.update()
     else:
         print("AI has no legal moves (Stalemate/Checkmate)")
