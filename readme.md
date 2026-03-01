@@ -51,7 +51,7 @@ cd ChessEngine
 │  resource_path.py ── Asset path resolution         │
 │                                                    │
 ├────────────────────────────────────────────────────┤
-│              C++ Engine (pybind11)                  │
+│              C++ Engine (pybind11)                 │
 │                                                    │
 │  bitboard.h / bitboard.cpp                         │
 │    └─ U64 bitboard types, bit intrinsics           │
@@ -61,7 +61,7 @@ cd ChessEngine
 │                                                    │
 │  chess_engine.cpp                                  │
 │    └─ ChessEngine class: board state, move gen,    │
-│       make/unmake, legality, castling, en passant   │
+│       make/unmake, legality, castling, en passant  │
 │                                                    │
 │  ai_engine.cpp                                     │
 │    └─ PVS (Principal Variation Search)             │
@@ -74,8 +74,8 @@ cd ChessEngine
 │                                                    │
 ├────────────────────────────────────────────────────┤
 │                  Assets                            │
-│  pieces/*.gif ── Piece sprites (wP, bK, etc.)     │
-│  background.gif ── Board background               │
+│  pieces/*.gif ── Piece sprites (wP, bK, etc.)      │
+│  background.gif ── Board background                │
 └────────────────────────────────────────────────────┘
 ```
 
