@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Existing git tag to build/release (example: v1.4.0)'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -28,6 +33,16 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag_name) || github.ref }}
+
+      - name: Show source revision
+        shell: bash
+        run: |
+          echo "Building ref: $(git rev-parse --abbrev-ref HEAD || true)"
+          echo "Commit: $(git rev-parse HEAD)"
+          git describe --tags --always || true
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -125,9 +140,19 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
 
     steps:
+      - name: Resolve tag name
+        id: meta
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag_name=${{ inputs.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag_name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -136,7 +161,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: Chess Engine ${{ github.ref_name }}
+          tag_name: ${{ steps.meta.outputs.tag_name }}
+          name: Chess Engine ${{ steps.meta.outputs.tag_name }}
           body: |
             ## ⬇️ Download Chess Engine
 
@@ -155,6 +181,6 @@ jobs:
           files: |
             ChessEngine-*.zip
             ChessEngine-*.tar.gz
+          overwrite_files: true
           draft: false
           prerelease: false
-
