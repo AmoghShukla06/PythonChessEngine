@@ -1,6 +1,7 @@
 # ui.py
 import time
 import math
+import platform
 import turtle
 from resource_path import resource_path
 
@@ -59,8 +60,11 @@ class ChessUI:
         self.status_panel = None
         self.status_hint = None
         self.flipped = False
-        self.move_animation_steps = 8
-        self.move_animation_delay = 0.012
+        self.move_animation_steps = 5
+        self.move_animation_delay = 0.006
+        if platform.system() == "Windows":
+            self.move_animation_steps = 3
+            self.move_animation_delay = 0.003
         self.annotations = {}
         self.annotation_order = []
         self.annotation_preview = None
@@ -172,9 +176,9 @@ class ChessUI:
         text_turtle.hideturtle()
         text_turtle.penup()
         text_turtle.speed(0)
-        text_turtle.goto(x + width / 2, y - height / 2)
+        text_turtle.goto(x + width / 2, y - height / 2 - 6)
         text_turtle.color(text_color)
-        text_turtle.write(text, align="center", font=("Trebuchet MS", 12, "bold"))
+        text_turtle.write(text, align="center", font=("Trebuchet MS", 11, "bold"))
         self.button_turtles[f"{text}_text"] = text_turtle
 
     def clear_game_buttons(self):
@@ -819,11 +823,8 @@ class ChessUI:
         root = canvas.winfo_toplevel()
 
         dialog = tk.Toplevel(root)
-        dialog.title("Choose Side")
         dialog.configure(bg="#0F1522")
-        dialog.resizable(False, False)
-        dialog.transient(root)
-        dialog.grab_set()
+        bind_id = self._attach_modal_dialog(root, dialog, 410, 280)
 
         frame = tk.Frame(dialog, bg="#0F1522", padx=28, pady=24)
         frame.pack(fill="both", expand=True)
@@ -838,11 +839,11 @@ class ChessUI:
 
         def pick_white():
             result["color"] = "w"
-            dialog.destroy()
+            self._close_modal_dialog(root, dialog, bind_id)
 
         def pick_black():
             result["color"] = "b"
-            dialog.destroy()
+            self._close_modal_dialog(root, dialog, bind_id)
 
         tk.Button(btn_row, text="♔ White", command=pick_white, cursor="hand2",
                   bg="#F2E7D8", fg="#1B2436", activebackground="#E5D6C2", activeforeground="#1B2436",
@@ -859,8 +860,6 @@ class ChessUI:
         dialog.bind("<b>", lambda _event: pick_black())
         dialog.bind("<B>", lambda _event: pick_black())
         dialog.protocol("WM_DELETE_WINDOW", pick_white)
-
-        self._center_dialog(root, dialog, 410, 280)
         dialog.wait_window()
         return result["color"]
 
@@ -880,11 +879,8 @@ class ChessUI:
         root = canvas.winfo_toplevel()
 
         dialog = tk.Toplevel(root)
-        dialog.title("AI Depth")
         dialog.configure(bg="#0F1522")
-        dialog.resizable(False, False)
-        dialog.transient(root)
-        dialog.grab_set()
+        bind_id = self._attach_modal_dialog(root, dialog, 460, 300)
 
         frame = tk.Frame(dialog, bg="#0F1522", padx=30, pady=24)
         frame.pack(fill="both", expand=True)
@@ -915,7 +911,7 @@ class ChessUI:
 
         def submit():
             result["depth"] = depth_var.get()
-            dialog.destroy()
+            self._close_modal_dialog(root, dialog, bind_id)
 
         tk.Button(frame, text="Start Game", command=submit, cursor="hand2",
                   bg="#2A7E54", fg="#F0F7F2", activebackground="#359965", activeforeground="#F0F7F2",
@@ -923,8 +919,6 @@ class ChessUI:
 
         dialog.bind("<Return>", lambda _event: submit())
         dialog.protocol("WM_DELETE_WINDOW", submit)
-
-        self._center_dialog(root, dialog, 460, 300)
         dialog.wait_window()
         return result["depth"]
 
@@ -937,11 +931,8 @@ class ChessUI:
         root = canvas.winfo_toplevel()
 
         dialog = tk.Toplevel(root)
-        dialog.title("Game Over")
         dialog.configure(bg="#0F1522")
-        dialog.resizable(False, False)
-        dialog.transient(root)
-        dialog.grab_set()
+        bind_id = self._attach_modal_dialog(root, dialog, 380, 240)
 
         frame = tk.Frame(dialog, bg="#0F1522", padx=28, pady=24)
         frame.pack(fill="both", expand=True)
@@ -968,11 +959,11 @@ class ChessUI:
 
         def play_again():
             result["action"] = "play_again"
-            dialog.destroy()
+            self._close_modal_dialog(root, dialog, bind_id)
 
         def exit_game():
             result["action"] = "exit"
-            dialog.destroy()
+            self._close_modal_dialog(root, dialog, bind_id)
 
         tk.Button(btn_row, text="Play Again", command=play_again, cursor="hand2",
                   bg="#2A7E54", fg="#F0F7F2", activebackground="#359965", activeforeground="#F0F7F2",
@@ -981,24 +972,84 @@ class ChessUI:
                   bg="#8B3A3A", fg="#F0F0F0", activebackground="#A84C4C", activeforeground="#F0F0F0",
                   relief="flat", padx=20, pady=10, font=("Trebuchet MS", 12, "bold")).grid(row=0, column=1, padx=8)
 
-        self._center_dialog(root, dialog, 380, 240)
         dialog.wait_window()
         return result["action"]
 
     def show_resign_menu(self):
         """Show confirmation dialog for resigning."""
-        from tkinter import messagebox
+        import tkinter as tk
+
+        result = {"confirm": False}
         canvas = self.screen.getcanvas()
         root = canvas.winfo_toplevel()
-        return messagebox.askyesno(
-            title="Resign",
-            message="Are you sure you want to resign?",
-            parent=root
-        )
+        dialog = tk.Toplevel(root)
+        dialog.configure(bg="#0F1522")
+        bind_id = self._attach_modal_dialog(root, dialog, 340, 200)
 
-    def _center_dialog(self, root, dialog, width, height):
-        """Center tkinter dialog over the turtle root window."""
-        root.update_idletasks()
-        x = root.winfo_rootx() + max((root.winfo_width() - width) // 2, 0)
-        y = root.winfo_rooty() + max((root.winfo_height() - height) // 2, 0)
-        dialog.geometry(f"{width}x{height}+{x}+{y}")
+        frame = tk.Frame(dialog, bg="#0F1522", padx=28, pady=24)
+        frame.pack(fill="both", expand=True)
+
+        tk.Label(frame, text="Resign Game?", bg="#0F1522", fg="#E5ECFF",
+                 font=("Georgia", 18, "bold")).pack(pady=(0, 8))
+        tk.Label(frame, text="Are you sure you want to resign?", bg="#0F1522", fg="#8EA0C4",
+                 font=("Trebuchet MS", 11)).pack(pady=(0, 20))
+
+        btn_row = tk.Frame(frame, bg="#0F1522")
+        btn_row.pack()
+
+        def confirm_resign():
+            result["confirm"] = True
+            self._close_modal_dialog(root, dialog, bind_id)
+
+        def cancel_resign():
+            result["confirm"] = False
+            self._close_modal_dialog(root, dialog, bind_id)
+
+        tk.Button(btn_row, text="Yes, Resign", command=confirm_resign, cursor="hand2",
+                  bg="#8B3A3A", fg="#F0F0F0", activebackground="#A84C4C", activeforeground="#F0F0F0",
+                  relief="flat", padx=20, pady=10, font=("Trebuchet MS", 12, "bold")).grid(row=0, column=0, padx=8)
+        tk.Button(btn_row, text="Cancel", command=cancel_resign, cursor="hand2",
+                  bg="#364052", fg="#C9D3EB", activebackground="#4A5A7A", activeforeground="#C9D3EB",
+                  relief="flat", padx=20, pady=10, font=("Trebuchet MS", 12, "bold")).grid(row=0, column=1, padx=8)
+
+        dialog.protocol("WM_DELETE_WINDOW", cancel_resign)
+        dialog.wait_window()
+        return result["confirm"]
+
+    def _attach_modal_dialog(self, root, dialog, base_width, base_height):
+        """Make a borderless modal dialog that stays centered and scales with root."""
+        dialog.overrideredirect(True)
+        dialog.transient(root)
+        try:
+            dialog.attributes("-topmost", True)
+        except Exception:
+            pass
+        dialog.grab_set()
+
+        def recenter(_event=None):
+            root.update_idletasks()
+            rw = max(root.winfo_width(), 640)
+            rh = max(root.winfo_height(), 480)
+            avail_w = max(rw - 120, 320)
+            avail_h = max(rh - 120, 220)
+            scale = min(avail_w / base_width, avail_h / base_height)
+            scale = max(0.85, min(scale, 1.35))
+            width = int(base_width * scale)
+            height = int(base_height * scale)
+            x = root.winfo_rootx() + max((rw - width) // 2, 0)
+            y = root.winfo_rooty() + max((rh - height) // 2, 0)
+            dialog.geometry(f"{width}x{height}+{x}+{y}")
+
+        bind_id = root.bind("<Configure>", recenter, add="+")
+        recenter()
+        dialog.focus_force()
+        return bind_id
+
+    def _close_modal_dialog(self, root, dialog, bind_id):
+        if bind_id:
+            root.unbind("<Configure>", bind_id)
+        try:
+            dialog.grab_release()
+        except Exception:
+            pass
+        dialog.destroy()

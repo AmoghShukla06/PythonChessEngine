@@ -1,17 +1,9 @@
 # main.py
 import sys
-import platform
 import turtle
 from chess_engine_wrapper import ChessEngine, AlphaBetaEngine
 from ui import ChessUI
 from resource_path import resource_path
-
-if platform.system() == "Windows":
-    try:
-        import ctypes
-        ctypes.windll.shcore.SetProcessDpiAwareness(1)  # type: ignore
-    except Exception:
-        pass
 
 # --- SETUP ---
 screen = turtle.Screen()
@@ -51,6 +43,8 @@ if human_color == "b":
 ui.draw_board()
 ui.init_pieces(engine.board)
 ui.draw_game_buttons()  # Add buttons
+ui.draw_captured_pieces([], [])
+ui.draw_game_buttons()
 ui.update_status(engine.turn)
 screen.update()
 
@@ -157,12 +151,14 @@ def perform_human_move(sr, sc, r, c):
                      (r, c) == engine.en_passant and
                      target_piece == "--")
 
+    capture_made = False
     if target_piece != "--":
         if human_color == "w":
             white_captured.append(target_piece)
         else:
             black_captured.append(target_piece)
         ui.remove_piece(r, c)
+        capture_made = True
     elif is_en_passant:
         ep_piece = engine.board[sr][c]
         if human_color == "w":
@@ -170,6 +166,7 @@ def perform_human_move(sr, sc, r, c):
         else:
             black_captured.append(ep_piece)
         ui.remove_piece(sr, c)
+        capture_made = True
 
     ui.end_piece_drag()
     ui.move_piece(sr, sc, r, c)
@@ -202,7 +199,8 @@ def perform_human_move(sr, sc, r, c):
     valid_moves = []
     capture_moves = []
 
-    refresh_captured()
+    if capture_made:
+        refresh_captured()
     ui.update_status(engine.turn, engine.game_over, engine.winner)
     screen.update()
 
@@ -257,6 +255,7 @@ def play_ai_turn():
 
         # Track captures
         target_piece = engine.board[tr][tc]
+        capture_made = False
         is_en_passant = (engine.board[sr][sc][1] == "P" and
                          engine.en_passant == (tr, tc) and
                          target_piece == "--")
@@ -267,6 +266,7 @@ def play_ai_turn():
             else:
                 black_captured.append(target_piece)
             ui.remove_piece(tr, tc)
+            capture_made = True
         elif is_en_passant:
             ep_piece = engine.board[sr][tc]
             if ai_color == "w":
@@ -274,6 +274,7 @@ def play_ai_turn():
             else:
                 black_captured.append(ep_piece)
             ui.remove_piece(sr, tc)
+            capture_made = True
 
         ui.move_piece(sr, sc, tr, tc)
 
@@ -298,7 +299,8 @@ def play_ai_turn():
         last_move = (sr, sc, tr, tc)
         ui.highlight_last_move(sr, sc, tr, tc)
 
-        refresh_captured()
+        if capture_made:
+            refresh_captured()
         ui.update_status(engine.turn, engine.game_over, engine.winner)
         screen.title("Chess: Human vs AI")
         screen.update()
@@ -459,6 +461,7 @@ def restart_game():
     ui.draw_board()
     ui.init_pieces(engine.board)
     ui.draw_game_buttons()  # Add buttons
+    refresh_captured()
     ui.update_status(engine.turn)
     screen.update()
     
