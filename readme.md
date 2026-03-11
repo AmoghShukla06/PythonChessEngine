@@ -31,9 +31,11 @@ cd ChessEngine
 
 - On launch, choose to play as **White** or **Black**, then **select AI depth** (1-20) with estimated response time.
 - Click a piece to select it → valid moves highlight in **green**, captures in **red**.
-- Click a valid square to make your move.
+- Move with either **click-to-move** or **left-drag and drop** (piece hovers with the cursor while dragging).
+- Press **`C`** to clear selection highlights.
 - The AI's last move is highlighted with a **tinted overlay** on both the source and destination squares.
 - **Captured pieces** are displayed on the right panel.
+- Use the right-side **Resign** and **Quit** buttons at any time on your turn.
 - Press **`F`** at any time to **flip the board**.
 - The AI search progress (depth, score, nodes, time) is printed to the terminal in real-time.
 
@@ -66,8 +68,9 @@ cd ChessEngine
 │  ai_engine.cpp                                     │
 │    └─ PVS (Principal Variation Search)             │
 │    └─ Quiescence search with SEE pruning           │
-│    └─ Zobrist hashing + transposition table        │
+│    └─ Zobrist hashing + persistent TT              │
 │    └─ Null move pruning, LMR, killer/history       │
+│    └─ Hash/PV move ordering + capture-only qsearch │
 │    └─ Pawn structure eval (doubled/isolated/passed)│
 │    └─ King safety eval (shield, open files, zone)  │
 │    └─ Piece-square tables (midgame + endgame)      │
@@ -121,7 +124,7 @@ python3 main.py
 
 ## 📊 Engine Strength Estimate
 
-**~2000–2200 Elo** (CCRL-like, depth 12)
+**~2200–2400 Elo** (CCRL-like estimate, depth 12, hardware-dependent)
 
 | Feature | Status |
 |---|---|
@@ -129,14 +132,16 @@ python3 main.py
 | Iterative Deepening (depth 1→20) | ✅ |
 | Aspiration Windows | ✅ |
 | Zobrist Hashing | ✅ |
-| Transposition Table | ✅ |
+| Persistent Transposition Table | ✅ |
+| Hash Move Ordering | ✅ |
 | Quiescence Search | ✅ |
+| Capture-Only Quiescence Move Gen | ✅ |
 | Null Move Pruning (R=2) | ✅ |
 | Late Move Reductions | ✅ |
 | Killer + History Heuristics | ✅ |
-| MVV-LVA + SEE Move Ordering | ✅ |
+| MVV-LVA + SEE-Style Capture Ordering | ✅ |
 | Principal Variation Search (PVS) | ✅ |
-| Static Exchange Evaluation (SEE) | ✅ |
+| Static Exchange Evaluation (SEE-lite) | ✅ |
 | Piece-Square Tables (mid+end) | ✅ |
 | Pawn Structure Eval | ✅ |
 | King Safety Eval | ✅ |
@@ -146,6 +151,24 @@ python3 main.py
 | Mobility Eval | ❌ |
 | Futility Pruning | ❌ |
 | Magic Bitboards | ❌ |
+
+### Depth Timing Snapshot (Current Build)
+
+Average move time from three representative positions (start/opening/middlegame) on Linux x86_64:
+
+| Depth | Avg Time |
+|---|---|
+| 6 | ~0.02s |
+| 7 | ~0.05s |
+| 8 | ~0.11s |
+| 9 | ~0.19s |
+| 10 | ~0.35s |
+| 11 | ~0.69s |
+| 12 | ~1.35s |
+| 13 | ~2.90s |
+| 14 | ~5.17s |
+
+UI depth estimates are intentionally more conservative than this benchmark to account for slower machines and complex positions.
 
 ---
 

@@ -252,21 +252,23 @@ public:
 
       if (!is_attacked(sq, enemy)) {
         if (color == WHITE) {
-          if ((castling & 1) && !(occupied & ((1ULL << 61) | (1ULL << 62))) &&
+          if ((castling & 1) && (pieces[WHITE][R] & (1ULL << 63)) &&
+              !(occupied & ((1ULL << 61) | (1ULL << 62))) &&
               !is_attacked(61, BLACK) && !is_attacked(62, BLACK)) {
             moves.push_back({7, 4, 7, 6, ""});
           }
-          if ((castling & 2) &&
+          if ((castling & 2) && (pieces[WHITE][R] & (1ULL << 56)) &&
               !(occupied & ((1ULL << 57) | (1ULL << 58) | (1ULL << 59))) &&
               !is_attacked(59, BLACK) && !is_attacked(58, BLACK)) {
             moves.push_back({7, 4, 7, 2, ""});
           }
         } else {
-          if ((castling & 4) && !(occupied & ((1ULL << 5) | (1ULL << 6))) &&
+          if ((castling & 4) && (pieces[BLACK][R] & (1ULL << 7)) &&
+              !(occupied & ((1ULL << 5) | (1ULL << 6))) &&
               !is_attacked(5, WHITE) && !is_attacked(6, WHITE)) {
             moves.push_back({0, 4, 0, 6, ""});
           }
-          if ((castling & 8) &&
+          if ((castling & 8) && (pieces[BLACK][R] & (1ULL << 0)) &&
               !(occupied & ((1ULL << 1) | (1ULL << 2) | (1ULL << 3))) &&
               !is_attacked(3, WHITE) && !is_attacked(2, WHITE)) {
             moves.push_back({0, 4, 0, 2, ""});
@@ -348,6 +350,39 @@ public:
     return is_attacked(bb_ctzll(k), enemy_col(color));
   }
 
+  bool insufficient_material() const {
+    if (pieces[WHITE][P] || pieces[BLACK][P] || pieces[WHITE][R] ||
+        pieces[BLACK][R] || pieces[WHITE][Q] || pieces[BLACK][Q]) {
+      return false;
+    }
+
+    int total_knights =
+        count_bits(pieces[WHITE][N]) + count_bits(pieces[BLACK][N]);
+    U64 bishops = pieces[WHITE][B] | pieces[BLACK][B];
+    int total_bishops = count_bits(bishops);
+
+    if (total_bishops == 0) {
+      return total_knights <= 1;
+    }
+
+    if (total_knights > 0) {
+      return false;
+    }
+
+    int bishop_color = -1;
+    while (bishops) {
+      int sq = bb_ctzll(bishops);
+      int sq_color = ((sq / 8) + (sq % 8)) & 1;
+      if (bishop_color == -1) {
+        bishop_color = sq_color;
+      } else if (bishop_color != sq_color) {
+        return false;
+      }
+      bishops &= bishops - 1;
+    }
+    return true;
+  }
+
   // Engine State Backup for Search
   struct EngineState {
     U64 pieces[2][6];
@@ -397,28 +432,32 @@ public:
       p_color = BLACK;
     if (p_color == -1)
       return py::make_tuple(lm, lc);
+    if (!pieces[p_color][K])
+      return py::make_tuple(lm, lc);
 
     auto pms = get_pseudo_moves(p_color);
     for (auto &m : pms) {
       if (get<0>(m) == r && get<1>(m) == c) {
         int tr = get<2>(m);
         int tc = get<3>(m);
+        int tsq = tr * 8 + tc;
+        bool cap = (colors[enemy_col(p_color)] & (1ULL << tsq)) != 0;
+        if (!cap && (pieces[p_color][P] & sq_bb) && abs(tc - c) == 1 &&
+            tsq == ep_square) {
+          cap = true;
+        }
+
         auto st = save_state();
         int tc_save = turn_col;
+        turn_col = p_color;
 
         make_move_fast(r, c, tr, tc, get<4>(m));
+        U64 king_bb = pieces[p_color][K];
         bool in_check_after =
-            is_attacked(bb_ctzll(pieces[p_color][K]), enemy_col(p_color));
+            !king_bb || is_attacked(bb_ctzll(king_bb), enemy_col(p_color));
         restore_state(st, tc_save);
 
         if (!in_check_after) {
-          int tsq = tr * 8 + tc;
-          bool cap = false;
-          if (colors[enemy_col(p_color)] & (1ULL << tsq))
-            cap = true;
-          else if ((pieces[p_color][P] & sq_bb) && abs(tc - c) == 1)
-            cap = true;
-
           if (cap)
             lc.push_back({tr, tc});
           else
@@ -431,13 +470,17 @@ public:
 
   bool has_legal_moves(const string &color_str) {
     int color = (color_str == "w") ? WHITE : BLACK;
+    if (!pieces[color][K])
+      return false;
     auto pms = get_pseudo_moves(color);
     for (auto &m : pms) {
       auto st = save_state();
       int tc_save = turn_col;
+      turn_col = color;
       make_move_fast(get<0>(m), get<1>(m), get<2>(m), get<3>(m), get<4>(m));
+      U64 king_bb = pieces[color][K];
       bool in_check_after =
-          is_attacked(bb_ctzll(pieces[color][K]), enemy_col(color));
+          !king_bb || is_attacked(bb_ctzll(king_bb), enemy_col(color));
       restore_state(st, tc_save);
       if (!in_check_after)
         return true;
@@ -446,6 +489,12 @@ public:
   }
 
   bool check_game_over() {
+    if (insufficient_material()) {
+      game_over = true;
+      winner = "draw";
+      return true;
+    }
+
     if (!has_legal_moves(turn_col == WHITE ? "w" : "b")) {
       game_over = true;
       if (in_check_col(turn_col))
@@ -533,14 +582,14 @@ public:
     }
     if (moved_piece == R) {
       if (color == WHITE) {
-        if (sc == 7)
+        if (sr == 7 && sc == 7)
           castling &= ~1;
-        if (sc == 0)
+        if (sr == 7 && sc == 0)
           castling &= ~2;
       } else {
-        if (sc == 7)
+        if (sr == 0 && sc == 7)
           castling &= ~4;
-        if (sc == 0)
+        if (sr == 0 && sc == 0)
           castling &= ~8;
       }
     }

@@ -76,6 +76,8 @@ struct TTEntry {
   int score;
   int depth;
   int flag;
+  int sr, sc, tr, tc;
+  char promo;
 };
 
 // --- Passed pawn bonuses by rank (from White's perspective) ---
@@ -97,6 +99,8 @@ public:
   AlphaBetaEngine(int depth = 5, double time_limit = 5.0) {
     max_depth = depth;
     this->time_limit = time_limit;
+    transposition_table.reserve(1 << 20);
+    history.reserve(1 << 18);
 
     LMR_table.assign(9, vector<int>(33, 0));
     for (int d = 1; d < 9; d++) {
@@ -113,12 +117,34 @@ public:
   }
 
   void _reset_search_state() {
-    transposition_table.clear();
     killer_moves.assign(max_depth + 16, {MoveFull{-1, -1, -1, -1, ""},
                                          MoveFull{-1, -1, -1, -1, ""}});
-    history.clear();
+    for (auto &kv : history) {
+      kv.second >>= 1;
+    }
+    if (history.size() > 250000) {
+      history.clear();
+    }
     nodes_searched = 0;
     start_time = 0.0;
+  }
+
+  bool _is_same_move(const MoveFull &m, const TTEntry &tt) const {
+    if (tt.sr < 0)
+      return false;
+    if (get<0>(m) != tt.sr || get<1>(m) != tt.sc || get<2>(m) != tt.tr ||
+        get<3>(m) != tt.tc) {
+      return false;
+    }
+    const string &promo = get<4>(m);
+    if (promo.empty())
+      return tt.promo == 0;
+    return promo[0] == tt.promo;
+  }
+
+  U64 _history_key(const MoveFull &m) const {
+    return (U64)get<0>(m) ^ ((U64)get<1>(m) << 8) ^ ((U64)get<2>(m) << 16) ^
+           ((U64)get<3>(m) << 24);
   }
 
   double get_time() {
@@ -161,6 +187,7 @@ public:
     bool has_best = false;
     int prev_score = 0;
     int asp_window = 50;
+    MoveFull pv_hint = {-1, -1, -1, -1, ""};
 
     for (int depth = 1; depth <= max_depth; depth++) {
       if (get_time() - start_time > time_limit)
@@ -169,12 +196,12 @@ public:
       int alpha = (depth >= 4) ? prev_score - asp_window : -999999;
       int beta = (depth >= 4) ? prev_score + asp_window : 999999;
 
-      auto res = _root_search(engine, depth, alpha, beta);
+      auto res = _root_search(engine, depth, alpha, beta, &pv_hint);
       MoveFull move = res.first;
       int score = res.second;
 
       if (score <= alpha || score >= beta) {
-        res = _root_search(engine, depth, -999999, 999999);
+        res = _root_search(engine, depth, -999999, 999999, &pv_hint);
         move = res.first;
         score = res.second;
       }
@@ -183,6 +210,7 @@ public:
       if (get<0>(move) != -1) {
         best_move = move;
         has_best = true;
+        pv_hint = move;
       }
 
       cout << "  [AI-BB] depth=" << depth << "  score=" << score
@@ -204,8 +232,9 @@ public:
         int tc = engine.turn_col;
         engine.make_move_fast(get<0>(m), get<1>(m), get<2>(m), get<3>(m),
                               get<4>(m));
-        bool in_chk = engine.is_attacked(bb_ctzll(engine.pieces[tc][K]),
-                                         engine.enemy_col(tc));
+        U64 king_bb = engine.pieces[tc][K];
+        bool in_chk =
+            !king_bb || engine.is_attacked(bb_ctzll(king_bb), engine.enemy_col(tc));
         engine.restore_state(st, tc);
         if (!in_chk) {
           return py::make_tuple(get<0>(m), get<1>(m), get<2>(m), get<3>(m));
@@ -219,9 +248,17 @@ public:
   // 4. PVS — ROOT SEARCH
   // =============================================
   pair<MoveFull, int> _root_search(ChessEngine &engine, int depth, int alpha,
-                                   int beta) {
+                                   int beta,
+                                   const MoveFull *preferred_move = nullptr) {
     int color = engine.turn_col;
-    auto moves = _gen_ordered_moves(engine, color, 0);
+    U64 key = _get_hash(engine);
+    const TTEntry *tt_ptr = nullptr;
+    auto it = transposition_table.find(key);
+    if (it != transposition_table.end() && it->second.full_key == key) {
+      tt_ptr = &it->second;
+    }
+    auto moves = _gen_ordered_moves(engine, color, 0, false, tt_ptr,
+                                    preferred_move);
     int best_score = -999999;
     MoveFull best_move = {-1, -1, -1, -1, ""};
     bool first_move = true;
@@ -237,8 +274,9 @@ public:
                             get<3>(move), get<4>(move));
 
       // Validate move
-      if (engine.is_attacked(bb_ctzll(engine.pieces[color][K]),
-                             engine.enemy_col(color))) {
+      U64 king_bb = engine.pieces[color][K];
+      if (!king_bb ||
+          engine.is_attacked(bb_ctzll(king_bb), engine.enemy_col(color))) {
         engine.restore_state(st, tc);
         continue;
       }
@@ -281,9 +319,12 @@ public:
     }
 
     auto key = _get_hash(engine);
-    if (transposition_table.find(key) != transposition_table.end()) {
-      auto &tt = transposition_table[key];
-      if (tt.full_key == key && tt.depth >= depth) {
+    const TTEntry *tt_ptr = nullptr;
+    auto tt_it = transposition_table.find(key);
+    if (tt_it != transposition_table.end() && tt_it->second.full_key == key) {
+      tt_ptr = &tt_it->second;
+      const TTEntry &tt = *tt_ptr;
+      if (tt.depth >= depth) {
         if (tt.flag == TT_EXACT)
           return tt.score;
         if (tt.flag == TT_ALPHA && tt.score <= alpha)
@@ -311,6 +352,7 @@ public:
         auto nm_st = engine.save_state();
         int nm_tc = engine.turn_col;
         engine.turn_col = engine.enemy_col(color);
+        engine.ep_square = -1; // clear en-passant square during null move
         int null_score = -_negamax(engine, depth - 1 - R, -beta, -beta + 1);
         engine.restore_state(nm_st, nm_tc);
         if (null_score >= beta)
@@ -319,10 +361,11 @@ public:
     }
 
     int ply = max(0, max_depth - depth);
-    auto moves = _gen_ordered_moves(engine, color, ply);
+    auto moves = _gen_ordered_moves(engine, color, ply, false, tt_ptr, nullptr);
 
     int original_alpha = alpha;
     int best_score = -999999;
+    MoveFull best_move = {-1, -1, -1, -1, ""};
     int move_count = 0;
     bool has_legal = false;
     bool pv_search_done = false;
@@ -337,8 +380,9 @@ public:
       bool is_capture = (engine.occupied & (1ULL << (tr * 8 + tc_sq))) != 0;
 
       engine.make_move_fast(get<0>(move), get<1>(move), tr, tc_sq, promo);
-      if (engine.is_attacked(bb_ctzll(engine.pieces[color][K]),
-                             engine.enemy_col(color))) {
+      U64 king_bb = engine.pieces[color][K];
+      if (!king_bb ||
+          engine.is_attacked(bb_ctzll(king_bb), engine.enemy_col(color))) {
         engine.restore_state(st, tc);
         continue;
       }
@@ -376,6 +420,7 @@ public:
         best_score = score;
       if (score > alpha) {
         alpha = score;
+        best_move = move;
         if (!is_capture && promo.empty()) {
           auto &km = killer_moves[ply];
           if (km.first != move) {
@@ -387,8 +432,7 @@ public:
 
       if (alpha >= beta) {
         if (!is_capture && promo.empty()) {
-          history[(U64)get<0>(move) ^ ((U64)get<1>(move) << 8) ^
-                  ((U64)tr << 16) ^ ((U64)tc_sq << 24)] += depth * depth;
+          history[_history_key(move)] += depth * depth;
         }
         break;
       }
@@ -398,12 +442,18 @@ public:
       return in_check ? -(20000 - depth) : 0;
     }
 
-    if (transposition_table.size() > 500000)
+    if (transposition_table.size() > 2000000)
       transposition_table.clear();
     int flag = (best_score <= original_alpha)
                    ? TT_ALPHA
                    : ((best_score >= beta) ? TT_BETA : TT_EXACT);
-    transposition_table[key] = {key, best_score, depth, flag};
+    char promo = 0;
+    if (!get<4>(best_move).empty()) {
+      promo = get<4>(best_move)[0];
+    }
+    transposition_table[key] = {key, best_score, depth, flag,
+                                get<0>(best_move), get<1>(best_move),
+                                get<2>(best_move), get<3>(best_move), promo};
 
     return best_score;
   }
@@ -426,14 +476,17 @@ public:
       alpha = stand_pat;
 
     int color = engine.turn_col;
-    auto moves = _gen_ordered_moves(engine, color, 0);
+    U64 key = _get_hash(engine);
+    const TTEntry *tt_ptr = nullptr;
+    auto it = transposition_table.find(key);
+    if (it != transposition_table.end() && it->second.full_key == key) {
+      tt_ptr = &it->second;
+    }
+    auto moves = _gen_ordered_moves(engine, color, 0, true, tt_ptr, nullptr);
 
     for (auto &move : moves) {
       int tr = get<2>(move);
       int tc = get<3>(move);
-      int tsq = tr * 8 + tc;
-      if (!(engine.colors[engine.enemy_col(color)] & (1ULL << tsq)))
-        continue; // Only captures
 
       // SEE pruning: skip losing captures
       if (_see(engine, get<0>(move), get<1>(move), tr, tc, color) < 0)
@@ -443,8 +496,9 @@ public:
       int tc_save = engine.turn_col;
 
       engine.make_move_fast(get<0>(move), get<1>(move), tr, tc, get<4>(move));
-      if (engine.is_attacked(bb_ctzll(engine.pieces[color][K]),
-                             engine.enemy_col(color))) {
+      U64 king_bb = engine.pieces[color][K];
+      if (!king_bb ||
+          engine.is_attacked(bb_ctzll(king_bb), engine.enemy_col(color))) {
         engine.restore_state(st, tc_save);
         continue;
       }
@@ -487,27 +541,17 @@ public:
         break;
       }
     }
+    // En passant victim.
+    if (victim_piece < 0 && attacker_piece == P && abs(tc - sc) == 1 &&
+        to_sq == engine.ep_square) {
+      victim_piece = P;
+    }
     if (victim_piece < 0)
       return 0; // no capture
 
-    // Simple SEE: compare attacker value with victim value
-    // If victim is worth more than attacker, it's clearly winning
-    // If equal or attacker worth more, check if square is defended
     int gain = PIECE_VALUE[victim_piece];
     int risk = PIECE_VALUE[attacker_piece];
-
-    // If we capture something worth more, always positive
-    if (gain >= risk)
-      return gain - risk;
-
-    // Check if target square is attacked by enemy
-    if (engine.is_attacked(to_sq, enemy)) {
-      // We'll lose our piece, net = gain - risk
-      return gain - risk;
-    }
-
-    // Not defended, so we just capture
-    return gain;
+    return gain - risk;
   }
 
   int get_piece_value(int c, int sq) { return 0; }
@@ -721,7 +765,10 @@ public:
   // =============================================
   // MOVE ORDERING
   // =============================================
-  vector<MoveFull> _gen_ordered_moves(ChessEngine &engine, int color, int ply) {
+  vector<MoveFull> _gen_ordered_moves(ChessEngine &engine, int color, int ply,
+                                      bool captures_only = false,
+                                      const TTEntry *tt_move_entry = nullptr,
+                                      const MoveFull *preferred_move = nullptr) {
     vector<tuple<MoveFull, int>> list_caps, list_kills, list_quiets;
     ply = max(0, min(ply, (int)killer_moves.size() - 1));
     auto &km = killer_moves[ply];
@@ -750,11 +797,30 @@ public:
           break;
         }
       }
+      bool is_ep = moved_kind == P && abs(tc - sc) == 1 &&
+                   !(engine.occupied & tsq_bb) && (tr * 8 + tc) == engine.ep_square;
+      if (is_ep) {
+        is_cap = true;
+        victim_val = MVV_LVA[P];
+      }
+
+      if (captures_only && !is_cap) {
+        continue;
+      }
+
+      if (preferred_move && m == *preferred_move) {
+        list_caps.push_back({m, 40000});
+        continue;
+      }
+      if (tt_move_entry && _is_same_move(m, *tt_move_entry)) {
+        list_caps.push_back({m, 30000});
+        continue;
+      }
 
       if (is_cap) {
         // Use SEE for better capture ordering
         int see_val = _see(engine, sr, sc, tr, tc, color);
-        int score = see_val + 10000; // ensure captures are sorted above quiets
+        int score = see_val + victim_val * 100 + 10000;
         if (!get<4>(m).empty())
           score += PIECE_VALUE[Q];
         list_caps.push_back({m, score});
@@ -766,9 +832,7 @@ public:
         if (m == km.first || m == km.second) {
           list_kills.push_back({m, 9000});
         } else {
-          U64 hist_key =
-              (U64)sr ^ ((U64)sc << 8) ^ ((U64)tr << 16) ^ ((U64)tc << 24);
-          list_quiets.push_back({m, history[hist_key]});
+          list_quiets.push_back({m, history[_history_key(m)]});
         }
       }
     }
@@ -777,6 +841,12 @@ public:
       return get<1>(a) > get<1>(b);
     };
     sort(list_caps.begin(), list_caps.end(), sf);
+    if (captures_only) {
+      vector<MoveFull> res;
+      for (auto &x : list_caps)
+        res.push_back(get<0>(x));
+      return res;
+    }
     sort(list_kills.begin(), list_kills.end(), sf);
     sort(list_quiets.begin(), list_quiets.end(), sf);
 
