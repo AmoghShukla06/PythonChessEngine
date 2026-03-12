@@ -821,8 +821,14 @@ class ChessUI:
         result = {"color": "w"}
         canvas = self.screen.getcanvas()
         root = canvas.winfo_toplevel()
+        root.update_idletasks()
+        try:
+            root.update()
+        except Exception:
+            pass
 
         dialog = tk.Toplevel(root)
+        dialog.title("Choose Side")
         dialog.configure(bg="#0F1522")
         bind_id = self._attach_modal_dialog(root, dialog, 410, 280)
 
@@ -877,8 +883,14 @@ class ChessUI:
         result = {"depth": 12}
         canvas = self.screen.getcanvas()
         root = canvas.winfo_toplevel()
+        root.update_idletasks()
+        try:
+            root.update()
+        except Exception:
+            pass
 
         dialog = tk.Toplevel(root)
+        dialog.title("AI Depth")
         dialog.configure(bg="#0F1522")
         bind_id = self._attach_modal_dialog(root, dialog, 460, 300)
 
@@ -929,8 +941,14 @@ class ChessUI:
         result = {"action": "exit"}
         canvas = self.screen.getcanvas()
         root = canvas.winfo_toplevel()
+        root.update_idletasks()
+        try:
+            root.update()
+        except Exception:
+            pass
 
         dialog = tk.Toplevel(root)
+        dialog.title("Game Over")
         dialog.configure(bg="#0F1522")
         bind_id = self._attach_modal_dialog(root, dialog, 380, 240)
 
@@ -982,7 +1000,13 @@ class ChessUI:
         result = {"confirm": False}
         canvas = self.screen.getcanvas()
         root = canvas.winfo_toplevel()
+        root.update_idletasks()
+        try:
+            root.update()
+        except Exception:
+            pass
         dialog = tk.Toplevel(root)
+        dialog.title("Resign")
         dialog.configure(bg="#0F1522")
         bind_id = self._attach_modal_dialog(root, dialog, 340, 200)
 
@@ -1017,16 +1041,25 @@ class ChessUI:
         return result["confirm"]
 
     def _attach_modal_dialog(self, root, dialog, base_width, base_height):
-        """Make a borderless modal dialog that stays centered and scales with root."""
-        dialog.overrideredirect(True)
-        dialog.transient(root)
+        """Make a modal dialog that stays centered and scales with root."""
+        is_windows = platform.system() == "Windows"
+        borderless = not is_windows
+        if borderless:
+            dialog.overrideredirect(True)
+        else:
+            dialog.resizable(False, False)
         try:
-            dialog.attributes("-topmost", True)
+            dialog.transient(root)
         except Exception:
             pass
-        dialog.grab_set()
+        if borderless:
+            dialog.withdraw()
+
+        state = {"updating": False, "x": 0, "y": 0, "w": base_width, "h": base_height}
 
         def recenter(_event=None):
+            if state["updating"]:
+                return
             root.update_idletasks()
             rw = max(root.winfo_width(), 640)
             rh = max(root.winfo_height(), 480)
@@ -1036,18 +1069,75 @@ class ChessUI:
             scale = max(0.85, min(scale, 1.35))
             width = int(base_width * scale)
             height = int(base_height * scale)
-            x = root.winfo_rootx() + max((rw - width) // 2, 0)
-            y = root.winfo_rooty() + max((rh - height) // 2, 0)
-            dialog.geometry(f"{width}x{height}+{x}+{y}")
+            root_x = root.winfo_rootx()
+            root_y = root.winfo_rooty()
 
-        bind_id = root.bind("<Configure>", recenter, add="+")
+            # Tk can report very negative roots before mapping on Windows.
+            if root_x < -10000 or root_y < -10000:
+                root_x = max((root.winfo_screenwidth() - rw) // 2, 0)
+                root_y = max((root.winfo_screenheight() - rh) // 2, 0)
+
+            x = root_x + max((rw - width) // 2, 0)
+            y = root_y + max((rh - height) // 2, 0)
+
+            screen_w = root.winfo_screenwidth()
+            screen_h = root.winfo_screenheight()
+            x = max(0, min(x, max(screen_w - width, 0)))
+            y = max(0, min(y, max(screen_h - height, 0)))
+            state["x"], state["y"], state["w"], state["h"] = x, y, width, height
+            state["updating"] = True
+            dialog.geometry(f"{width}x{height}+{x}+{y}")
+            state["updating"] = False
+
+        def keep_attached(_event=None):
+            if state["updating"]:
+                return
+            # Snap back if user tries moving dialog independently.
+            if (dialog.winfo_x() != state["x"] or dialog.winfo_y() != state["y"]):
+                recenter()
+
+        root_bind_id = root.bind("<Configure>", recenter, add="+")
+        dialog_bind_id = None
+        if borderless:
+            dialog_bind_id = dialog.bind("<Configure>", keep_attached, add="+")
         recenter()
-        dialog.focus_force()
-        return bind_id
+        if borderless:
+            dialog.deiconify()
+        else:
+            dialog.update_idletasks()
+        try:
+            dialog.lift(root)
+        except Exception:
+            dialog.lift()
+        try:
+            dialog.focus_force()
+        except Exception:
+            pass
+        if is_windows:
+            try:
+                dialog.attributes("-topmost", True)
+                dialog.after(80, lambda: dialog.attributes("-topmost", False))
+            except Exception:
+                pass
+        try:
+            dialog.grab_set()
+        except Exception:
+            pass
+        return (root_bind_id, dialog_bind_id)
 
     def _close_modal_dialog(self, root, dialog, bind_id):
         if bind_id:
-            root.unbind("<Configure>", bind_id)
+            root_bind_id, dialog_bind_id = bind_id
+            try:
+                if root_bind_id:
+                    root.unbind("<Configure>", root_bind_id)
+            except Exception:
+                pass
+            try:
+                if dialog_bind_id:
+                    dialog.unbind("<Configure>", dialog_bind_id)
+            except Exception:
+                pass
         try:
             dialog.grab_release()
         except Exception:
