@@ -1,6 +1,6 @@
-# ♟ Hybrid Bitboard Chess Engine
+# ♟ ChessEngine — Hybrid Bitboard Chess Engine
 
-A high-performance Chess Engine built with a **Python** frontend and an ultra-fast **C++ Bitboard** backend. This project utilizes `turtle` for the graphical interface while delegating all the heavy lifting (search, move generation, and evaluation) to a highly optimized C++ engine bound to Python via `pybind11`.
+A high-performance Chess Engine built with a **Python** frontend and an ultra-fast **C++ Bitboard** backend. This project uses `turtle` for the graphical interface while delegating all the heavy lifting (search, move generation, and evaluation) to a highly optimized C++ engine bound to Python via `pybind11`. Play against a **~2500–2700 Elo** AI with a live evaluation bar, move list, opening book, and difficulty presets.
 
 ---
 
@@ -9,14 +9,14 @@ A high-performance Chess Engine built with a **Python** frontend and an ultra-fa
 **No Python, no compiler, no dependencies needed.** Just download and play!
 
 ### 🪟 Windows
-1. Go to the [**Releases page**](https://github.com/AmoghShukla06/PythonChessEngine/releases/latest)
+1. Go to the [**Releases page**](https://github.com/AmoghShukla06/ChessEngine/releases/latest)
 2. Download **`ChessEngine-windows-x64.zip`**
 3. Extract the ZIP file
 4. Double-click **`ChessEngine.exe`** inside the `ChessEngine` folder
 5. Play! 🎉
 
 ### 🐧 Linux
-1. Go to the [**Releases page**](https://github.com/AmoghShukla06/PythonChessEngine/releases/latest)
+1. Go to the [**Releases page**](https://github.com/AmoghShukla06/ChessEngine/releases/latest)
 2. Download **`ChessEngine-linux-x86_64.tar.gz`**
 3. Extract and run:
 ```bash
@@ -31,14 +31,14 @@ cd ChessEngine
 
 - On launch, choose to play as **White** or **Black**, then pick a **difficulty preset** (Beginner → Master) or fine-tune the exact **search depth** (1-20) with estimated response time.
 - A live **evaluation bar** on the left shows the engine's assessment of the position (White fills from the bottom; `+1.4` style readout, or `M3` when a forced mate is seen).
+- A **move-list panel** on the right records the game in algebraic notation (SAN).
 - Click a piece to select it → valid moves highlight in **green**, captures in **red**.
 - Move with either **click-to-move** or **left-drag and drop** (piece hovers with the cursor while dragging).
-- Press **`C`** to clear selection highlights.
 - The AI's last move is highlighted with a **tinted overlay** on both the source and destination squares.
 - **Captured pieces** are displayed on the right panel.
 - Use the right-side **Resign** and **Quit** buttons at any time on your turn.
-- Press **`F`** at any time to **flip the board**.
-- The AI search progress (depth, score, nodes, time) is printed to the terminal in real-time.
+- Keyboard shortcuts: **`C`** clear highlights · **`F`** flip board · **`R`** resign · **`P`** save the game to a **PGN** file.
+- The AI opens instantly from a built-in **opening book**, then prints its search progress (depth, score, nodes, time) to the terminal in real-time.
 
 ---
 
@@ -49,7 +49,9 @@ cd ChessEngine
 │                  Python Layer                      │
 │                                                    │
 │  main.py ─── Game loop, click handler, AI trigger  │
-│  ui.py ───── Turtle-based GUI, board rendering     │
+│  ui.py ───── Turtle GUI: board, eval bar, moves    │
+│  opening_book.py ── FEN-keyed opening book         │
+│  notation.py ── SAN generation + PGN export        │
 │  chess_engine_wrapper.py ── Thin wrapper over C++  │
 │  resource_path.py ── Asset path resolution         │
 │                                                    │
@@ -63,17 +65,18 @@ cd ChessEngine
 │    └─ File masks for pawn evaluation               │
 │                                                    │
 │  chess_engine.cpp                                  │
-│    └─ ChessEngine class: board state, move gen,    │
+│    └─ ChessEngine: board state, move gen,          │
 │       make/unmake, legality, castling, en passant  │
+│    └─ FEN load/export, perft                        │
 │                                                    │
 │  ai_engine.cpp                                     │
 │    └─ PVS (Principal Variation Search)             │
-│    └─ Quiescence search with SEE pruning           │
-│    └─ Zobrist hashing + persistent TT              │
-│    └─ Null move pruning, LMR, killer/history       │
-│    └─ Hash/PV move ordering + capture-only qsearch │
-│    └─ Pawn structure eval (doubled/isolated/passed)│
-│    └─ King safety eval (shield, open files, zone)  │
+│    └─ Quiescence search with full SEE pruning      │
+│    └─ Zobrist hashing + array transposition table  │
+│    └─ Check extensions, null-move, LMR/LMP         │
+│    └─ Reverse-futility + futility pruning          │
+│    └─ Killer/history + hash/PV move ordering       │
+│    └─ Tapered eval, mobility, pawn/king safety     │
 │    └─ Piece-square tables (midgame + endgame)      │
 │                                                    │
 ├────────────────────────────────────────────────────┤
@@ -98,8 +101,8 @@ cd ChessEngine
 ### 1. Setup Environment
 
 ```bash
-git clone https://github.com/AmoghShukla06/PythonChessEngine.git
-cd PythonChessEngine
+git clone https://github.com/AmoghShukla06/ChessEngine.git
+cd ChessEngine
 python3 -m venv venv
 source venv/bin/activate
 pip install pybind11
@@ -135,9 +138,10 @@ python3 main.py
 ## 📊 Engine Strength Estimate
 
 **~2500–2700 Elo** (estimate, depth 12, hardware-dependent). A self-play match
-of the current build vs the previous release scored **+255 Elo (13/16, zero
-losses)** at equal fixed depth — and reaches a given depth **~2.3× faster**
-thanks to sharper pruning.
+of the current build vs the previous release scored **+338 Elo (14/16, zero
+losses across 64 games)** at equal fixed depth — and reaches a given depth
+**~2.3× faster** thanks to sharper pruning, an array-based transposition table,
+and a built-in opening book.
 
 | Feature | Status |
 |---|---|
@@ -145,7 +149,7 @@ thanks to sharper pruning.
 | Iterative Deepening (depth 1→20) | ✅ |
 | Aspiration Windows | ✅ |
 | Zobrist Hashing | ✅ |
-| Persistent Transposition Table | ✅ |
+| **Array Transposition Table (generation-aged)** | ✅ |
 | Hash Move Ordering | ✅ |
 | Quiescence Search | ✅ |
 | Capture-Only Quiescence Move Gen | ✅ |
@@ -168,8 +172,9 @@ thanks to sharper pruning.
 | King Safety Eval | ✅ |
 | Bishop Pair Bonus | ✅ |
 | Bitboard Move Generation | ✅ |
+| **Opening Book** | ✅ |
+| **Evaluation Bar + SAN Move List + PGN Export** | ✅ |
 | Magic Bitboards | ❌ |
-| Opening Book | ❌ |
 
 ### Depth Timing Snapshot (Current Build)
 
