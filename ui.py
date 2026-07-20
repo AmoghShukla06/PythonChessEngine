@@ -72,9 +72,15 @@ class ChessUI:
         self.dragging_piece_origin = None
         self.button_turtles = {}
         self.button_bounds = {}  # Store button clickable areas
+        self.eval_bar = None
+        self.eval_label = None
+        self.eval_white_frac = 0.5
+        self.move_list_turtles = []
         self.load_shapes()
         self.setup_status_display()
         self.setup_hints()
+        self.setup_eval_bar()
+        self.setup_move_list()
 
     def load_shapes(self):
         for p in ["wP", "wR", "wN", "wB", "wQ", "wK", "bP", "bR", "bN", "bB", "bQ", "bK"]:
@@ -121,8 +127,73 @@ class ChessUI:
         self.status_hint.penup()
         self.status_hint.goto(0, -395)
         self.status_hint.color(HINT_TEXT)
-        self.status_hint.write("Left drag: move | C: clear highlights | F: flip | R: resign", align="center",
-                               font=("Trebuchet MS", 11, "normal"))
+        self.status_hint.write(
+            "Left drag: move | C: clear | F: flip | R: resign | P: save PGN",
+            align="center", font=("Trebuchet MS", 11, "normal"))
+
+    # --- Evaluation bar (engine score, White at the bottom) ---
+    EVAL_BAR_X = -448
+    EVAL_BAR_W = 30
+    EVAL_BAR_BOTTOM = -BOARD_HALF
+    EVAL_BAR_H = 2 * BOARD_HALF
+
+    def setup_eval_bar(self):
+        self.eval_bar = turtle.Turtle()
+        self.eval_bar.hideturtle()
+        self.eval_bar.penup()
+        self.eval_bar.speed(0)
+        self.eval_label = turtle.Turtle()
+        self.eval_label.hideturtle()
+        self.eval_label.penup()
+        self.eval_label.speed(0)
+        self.draw_eval_bar(0.0)
+
+    def draw_eval_bar(self, white_cp, mate_in=None):
+        """Render the eval bar. white_cp is centipawns from White's POV;
+        mate_in is signed plies-to-mate (+ = White mating) if a mate is seen."""
+        if self.eval_bar is None:
+            return
+
+        if mate_in is not None and mate_in != 0:
+            frac = 1.0 if mate_in > 0 else 0.0
+            label = f"M{abs((mate_in + 1) // 2)}"
+        else:
+            p = white_cp / 100.0  # pawns
+            frac = 1.0 / (1.0 + 10 ** (-p / 4.0))  # logistic squash
+            frac = max(0.03, min(0.97, frac))
+            label = f"{p:+.1f}" if abs(p) < 100 else f"{p:+.0f}"
+        self.eval_white_frac = frac
+
+        x = self.EVAL_BAR_X
+        w = self.EVAL_BAR_W
+        bottom = self.EVAL_BAR_BOTTOM
+        h = self.EVAL_BAR_H
+        white_h = h * frac
+
+        self.eval_bar.clear()
+        # Black (top) background for the whole bar.
+        self._draw_rect(self.eval_bar, x, bottom + h, w, h, "#26272B",
+                        "#0A0E17", pen_size=2)
+        # White fill from the bottom.
+        if white_h > 1:
+            self._draw_rect(self.eval_bar, x, bottom + white_h, w, white_h,
+                            "#E9EDF2")
+        # Midline marker at 0.0.
+        self.eval_bar.penup()
+        self.eval_bar.pensize(1)
+        self.eval_bar.pencolor("#6B7280")
+        self.eval_bar.goto(x, bottom + h / 2)
+        self.eval_bar.pendown()
+        self.eval_bar.setheading(0)
+        self.eval_bar.forward(w)
+        self.eval_bar.penup()
+
+        # Numeric label above the bar, colored by who is favored.
+        self.eval_label.clear()
+        self.eval_label.goto(x + w / 2, bottom + h + 12)
+        self.eval_label.color("#E9EDF2" if frac >= 0.5 else "#9AA6BF")
+        self.eval_label.write(label, align="center",
+                              font=("Consolas", 13, "bold"))
 
     def draw_game_buttons(self):
         """Draw Resign and Quit buttons on the right side of the board."""
@@ -692,6 +763,82 @@ class ChessUI:
         t.penup()
         return t
 
+    # --- Move list panel (SAN scoresheet) ---
+    MOVE_PANEL_LEFT = 556
+    MOVE_PANEL_WIDTH = 178
+
+    def setup_move_list(self):
+        self.move_list_turtles = []
+
+    def clear_move_list(self):
+        for t in getattr(self, "move_list_turtles", []):
+            t.clear()
+            t.hideturtle()
+        self.move_list_turtles = []
+
+    def draw_move_list(self, san_moves):
+        """Render a two-column SAN scoresheet, auto-scrolled to the latest moves."""
+        self.clear_move_list()
+
+        left = self.MOVE_PANEL_LEFT
+        width = self.MOVE_PANEL_WIDTH
+        top = BOARD_HALF + 10
+        height = 2 * BOARD_HALF + 20
+
+        panel = turtle.Turtle()
+        panel.hideturtle(); panel.penup(); panel.speed(0)
+        self._draw_rect(panel, left + 6, top - 6, width, height, "#080C14")
+        self._draw_rect(panel, left, top, width, height, PANEL_BG,
+                        PANEL_OUTLINE, pen_size=2)
+        self.move_list_turtles.append(panel)
+
+        title = turtle.Turtle()
+        title.hideturtle(); title.penup(); title.speed(0)
+        title.goto(left + width / 2, top - 34)
+        title.color(PANEL_TEXT)
+        title.write("Moves", align="center", font=("Georgia", 15, "bold"))
+        self.move_list_turtles.append(title)
+
+        # Group plies into (number, white, black) rows.
+        rows = []
+        for i in range(0, len(san_moves), 2):
+            num = i // 2 + 1
+            w = san_moves[i]
+            b = san_moves[i + 1] if i + 1 < len(san_moves) else ""
+            rows.append((num, w, b))
+
+        row_h = 22
+        start_y = top - 62
+        max_rows = int((height - 80) // row_h)
+        visible = rows[-max_rows:] if len(rows) > max_rows else rows
+
+        num_x = left + 14
+        white_x = left + 52
+        black_x = left + 120
+        for i, (num, w, b) in enumerate(visible):
+            y = start_y - i * row_h
+            t = turtle.Turtle()
+            t.hideturtle(); t.penup(); t.speed(0)
+            t.goto(num_x, y)
+            t.color(HINT_TEXT)
+            t.write(f"{num}.", align="left", font=("Consolas", 11, "normal"))
+            self.move_list_turtles.append(t)
+
+            tw = turtle.Turtle()
+            tw.hideturtle(); tw.penup(); tw.speed(0)
+            tw.goto(white_x, y)
+            tw.color("#EAEEF6")
+            tw.write(w, align="left", font=("Consolas", 11, "bold"))
+            self.move_list_turtles.append(tw)
+
+            if b:
+                tb = turtle.Turtle()
+                tb.hideturtle(); tb.penup(); tb.speed(0)
+                tb.goto(black_x, y)
+                tb.color("#C7D0E4")
+                tb.write(b, align="left", font=("Consolas", 11, "bold"))
+                self.move_list_turtles.append(tb)
+
     def clear_captured_display(self):
         for t in self.captured_turtles:
             t.clear()
@@ -872,15 +1019,22 @@ class ChessUI:
     def show_depth_menu(self):
         import tkinter as tk
 
+        # Response-time estimates for the improved engine (much faster than the
+        # old build thanks to sharper pruning); conservative for slow machines.
         TIME_ESTIMATES = {
-            1: "< 0.01s",  2: "< 0.01s",  3: "< 0.01s",  4: "~ 0.01s",
-            5: "~ 0.02s",  6: "~ 0.05s",  7: "~ 0.1s",   8: "~ 0.2s",
-            9: "~ 0.4s",  10: "~ 0.8s",  11: "~ 1.5s",  12: "~ 3s",
-            13: "~ 6s",   14: "~ 10s",   15: "~ 20s",   16: "~ 35s",
-            17: "~ 1 min", 18: "~ 2 min", 19: "~ 4 min", 20: "~ 8 min",
+            1: "instant",  2: "instant",  3: "instant",  4: "instant",
+            5: "< 0.05s",  6: "~ 0.05s",  7: "~ 0.1s",   8: "~ 0.2s",
+            9: "~ 0.3s",  10: "~ 0.6s",  11: "~ 1s",    12: "~ 2s",
+            13: "~ 4s",   14: "~ 7s",    15: "~ 13s",   16: "~ 25s",
+            17: "~ 45s",  18: "~ 1.5 min", 19: "~ 3 min", 20: "~ 6 min",
         }
+        # Named difficulty presets -> search depth.
+        PRESETS = [
+            ("Beginner", 2), ("Easy", 4), ("Intermediate", 7),
+            ("Advanced", 10), ("Expert", 13), ("Master", 16),
+        ]
 
-        result = {"depth": 12}
+        result = {"depth": 10}
         canvas = self.screen.getcanvas()
         root = canvas.winfo_toplevel()
         root.update_idletasks()
@@ -890,36 +1044,59 @@ class ChessUI:
             pass
 
         dialog = tk.Toplevel(root)
-        dialog.title("AI Depth")
+        dialog.title("Difficulty")
         dialog.configure(bg="#0F1522")
-        bind_id = self._attach_modal_dialog(root, dialog, 460, 300)
+        bind_id = self._attach_modal_dialog(root, dialog, 500, 400)
 
-        frame = tk.Frame(dialog, bg="#0F1522", padx=30, pady=24)
+        frame = tk.Frame(dialog, bg="#0F1522", padx=30, pady=22)
         frame.pack(fill="both", expand=True)
 
-        tk.Label(frame, text="Select AI Depth", bg="#0F1522", fg="#E5ECFF",
-                 font=("Georgia", 22, "bold")).pack(pady=(0, 10))
+        tk.Label(frame, text="Select Difficulty", bg="#0F1522", fg="#E5ECFF",
+                 font=("Georgia", 22, "bold")).pack(pady=(0, 4))
+        tk.Label(frame, text="Pick a preset or fine-tune the search depth",
+                 bg="#0F1522", fg="#8EA0C4",
+                 font=("Trebuchet MS", 10)).pack(pady=(0, 12))
 
-        depth_var = tk.IntVar(value=12)
-        depth_text = tk.StringVar(value="Depth: 12")
-        eta_text = tk.StringVar(value=f"Estimated response: {TIME_ESTIMATES[12]}")
+        depth_var = tk.IntVar(value=10)
+        depth_text = tk.StringVar()
+        eta_text = tk.StringVar()
 
-        tk.Label(frame, textvariable=depth_text, bg="#0F1522", fg="#FFFFFF",
-                 font=("Trebuchet MS", 17, "bold")).pack(pady=(0, 8))
+        def label_for(d):
+            best = PRESETS[0][0]
+            for name, pd in PRESETS:
+                if d >= pd:
+                    best = name
+            return best
 
         def on_depth_change(value):
             d = int(float(value))
-            depth_text.set(f"Depth: {d}")
+            depth_text.set(f"{label_for(d)}  ·  depth {d}")
             eta_text.set(f"Estimated response: {TIME_ESTIMATES.get(d, 'unknown')}")
+
+        # Preset buttons (two rows of three).
+        preset_wrap = tk.Frame(frame, bg="#0F1522")
+        preset_wrap.pack(pady=(0, 14))
+        for i, (name, pd) in enumerate(PRESETS):
+            def make_cmd(val):
+                return lambda: (depth_var.set(val), on_depth_change(val))
+            tk.Button(preset_wrap, text=f"{name}\n(d{pd})", command=make_cmd(pd),
+                      cursor="hand2", width=10, bg="#1E2639", fg="#ECF1FF",
+                      activebackground="#2A3550", activeforeground="#ECF1FF",
+                      relief="flat", padx=4, pady=6,
+                      font=("Trebuchet MS", 10, "bold")).grid(
+                          row=i // 3, column=i % 3, padx=6, pady=5)
+
+        tk.Label(frame, textvariable=depth_text, bg="#0F1522", fg="#FFFFFF",
+                 font=("Trebuchet MS", 15, "bold")).pack(pady=(4, 6))
 
         slider = tk.Scale(frame, from_=1, to=20, orient=tk.HORIZONTAL, variable=depth_var,
                           command=on_depth_change, bg="#0F1522", fg="#DEE6FA",
-                          troughcolor="#2A3550", highlightthickness=0, length=330,
-                          showvalue=False, font=("Trebuchet MS", 10), width=18)
-        slider.pack(pady=(0, 10))
+                          troughcolor="#2A3550", highlightthickness=0, length=360,
+                          showvalue=False, font=("Trebuchet MS", 10), width=16)
+        slider.pack(pady=(0, 8))
 
         tk.Label(frame, textvariable=eta_text, bg="#0F1522", fg="#8EA0C4",
-                 font=("Trebuchet MS", 11)).pack(pady=(0, 16))
+                 font=("Trebuchet MS", 11)).pack(pady=(0, 14))
 
         def submit():
             result["depth"] = depth_var.get()
@@ -929,6 +1106,7 @@ class ChessUI:
                   bg="#2A7E54", fg="#F0F7F2", activebackground="#359965", activeforeground="#F0F7F2",
                   relief="flat", padx=30, pady=8, font=("Trebuchet MS", 14, "bold")).pack()
 
+        on_depth_change(10)
         dialog.bind("<Return>", lambda _event: submit())
         dialog.protocol("WM_DELETE_WINDOW", submit)
         dialog.wait_window()

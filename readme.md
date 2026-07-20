@@ -29,7 +29,8 @@ cd ChessEngine
 
 ## 🎮 Playing Instructions
 
-- On launch, choose to play as **White** or **Black**, then **select AI depth** (1-20) with estimated response time.
+- On launch, choose to play as **White** or **Black**, then pick a **difficulty preset** (Beginner → Master) or fine-tune the exact **search depth** (1-20) with estimated response time.
+- A live **evaluation bar** on the left shows the engine's assessment of the position (White fills from the bottom; `+1.4` style readout, or `M3` when a forced mate is seen).
 - Click a piece to select it → valid moves highlight in **green**, captures in **red**.
 - Move with either **click-to-move** or **left-drag and drop** (piece hovers with the cursor while dragging).
 - Press **`C`** to clear selection highlights.
@@ -114,6 +115,15 @@ g++ -O3 -Wall -shared -std=c++17 -fPIC \
   -o chess_engine_cpp$(python3 -c "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))")
 ```
 
+**Windows (MinGW-w64, e.g. [WinLibs](https://winlibs.com/) UCRT build):**
+```powershell
+powershell -ExecutionPolicy Bypass -File rebuild.ps1
+```
+This wraps the g++ command with `-static -static-libgcc -static-libstdc++`, which
+is **required** — without static linking the `.pyd` fails to import ("DLL load
+failed") because Python 3.8+ won't resolve MinGW runtime DLLs via `PATH`.
+(`python build_exe.py` uses the same flags when building the standalone `.exe`.)
+
 ### 3. Run
 
 ```bash
@@ -124,7 +134,10 @@ python3 main.py
 
 ## 📊 Engine Strength Estimate
 
-**~2200–2400 Elo** (CCRL-like estimate, depth 12, hardware-dependent)
+**~2500–2700 Elo** (estimate, depth 12, hardware-dependent). A self-play match
+of the current build vs the previous release scored **+255 Elo (13/16, zero
+losses)** at equal fixed depth — and reaches a given depth **~2.3× faster**
+thanks to sharper pruning.
 
 | Feature | Status |
 |---|---|
@@ -136,39 +149,45 @@ python3 main.py
 | Hash Move Ordering | ✅ |
 | Quiescence Search | ✅ |
 | Capture-Only Quiescence Move Gen | ✅ |
-| Null Move Pruning (R=2) | ✅ |
-| Late Move Reductions | ✅ |
+| Null Move Pruning (adaptive R) | ✅ |
+| Late Move Reductions (PV-aware) | ✅ |
 | Killer + History Heuristics | ✅ |
-| MVV-LVA + SEE-Style Capture Ordering | ✅ |
+| MVV-LVA + SEE Capture Ordering | ✅ |
 | Principal Variation Search (PVS) | ✅ |
-| Static Exchange Evaluation (SEE-lite) | ✅ |
+| **Full Static Exchange Evaluation (swap-off + x-ray)** | ✅ |
+| **Check Extensions** | ✅ |
+| **Reverse Futility (Static Null Move) Pruning** | ✅ |
+| **Futility Pruning** | ✅ |
+| **Late Move Pruning** | ✅ |
 | Piece-Square Tables (mid+end) | ✅ |
+| **Tapered Evaluation (phase-interpolated king PST)** | ✅ |
+| **Mobility Eval** | ✅ |
+| **Rook Open / Semi-Open File Bonus** | ✅ |
+| **Tempo Bonus** | ✅ |
 | Pawn Structure Eval | ✅ |
 | King Safety Eval | ✅ |
 | Bishop Pair Bonus | ✅ |
 | Bitboard Move Generation | ✅ |
-| Check Extensions | ❌ |
-| Mobility Eval | ❌ |
-| Futility Pruning | ❌ |
 | Magic Bitboards | ❌ |
+| Opening Book | ❌ |
 
 ### Depth Timing Snapshot (Current Build)
 
-Average move time from three representative positions (start/opening/middlegame) on Linux x86_64:
+Move time from a representative middlegame on Windows x86_64 (MinGW GCC 16, `-O3`):
 
-| Depth | Avg Time |
+| Depth | Time |
 |---|---|
-| 6 | ~0.02s |
-| 7 | ~0.05s |
-| 8 | ~0.11s |
-| 9 | ~0.19s |
-| 10 | ~0.35s |
-| 11 | ~0.69s |
-| 12 | ~1.35s |
-| 13 | ~2.90s |
-| 14 | ~5.17s |
+| 9 | ~0.14s |
+| 11 | ~0.44s |
 
-UI depth estimates are intentionally more conservative than this benchmark to account for slower machines and complex positions.
+The previous build needed ~0.31s just for depth 9 (491k nodes vs 106k now).
+UI depth estimates stay conservative to account for slower machines and complex positions.
+
+### Correctness
+
+Move generation is verified by `perft` against known node counts for five
+standard positions (start, Kiwipete, and three edge-case positions) through the
+depths listed — all exact. Run `python tests/perft_test.py`.
 
 ---
 

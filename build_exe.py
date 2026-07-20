@@ -90,8 +90,11 @@ def compile_cpp_engine():
                  "import sysconfig; print(sysconfig.get_config_var('LDLIBRARY') or '')"],
                 text=True
             ).strip()
+            # Static-link the MinGW runtime so the .pyd has no external DLL
+            # dependencies (Python 3.8+ won't resolve them via PATH anyway).
             run(
                 f'g++ -O3 -Wall -shared -std=c++17 '
+                f'-static -static-libgcc -static-libstdc++ '
                 f'{includes} '
                 f'-I"{python_includes}" '
                 f'bitboard.cpp chess_engine.cpp '

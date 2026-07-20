@@ -4,10 +4,14 @@ import turtle
 from chess_engine_wrapper import ChessEngine, AlphaBetaEngine
 from ui import ChessUI
 from resource_path import resource_path
+from opening_book import OpeningBook
+import notation
+import datetime
 
 # --- SETUP ---
+WIN_W, WIN_H = 1500, 900  # room for eval bar (left), board, captured + move list (right)
 screen = turtle.Screen()
-screen.setup(1100, 900)  # Wider to accommodate captured pieces panel
+screen.setup(WIN_W, WIN_H)
 screen.title("Chess: Human vs AI [Alpha-Beta]")
 screen.bgcolor("#1a1a2e")  # Dark background fills entire window
 screen.bgpic(resource_path("background.gif"))
@@ -18,7 +22,20 @@ canvas = screen.getcanvas()
 raw_canvas = canvas._canvas if hasattr(canvas, "_canvas") else canvas
 root = canvas.winfo_toplevel()
 root.resizable(True, True)
-root.minsize(800, 700)
+root.minsize(900, 700)
+
+# Fit the window to the usable work area (excludes the taskbar) and center it,
+# so the title bar is always reachable/draggable even on shorter laptop screens.
+root.update_idletasks()
+try:
+    _avail_w, _avail_h = root.maxsize()  # usable desktop area
+except Exception:
+    _avail_w, _avail_h = root.winfo_screenwidth(), root.winfo_screenheight()
+_win_w = min(WIN_W, _avail_w)
+_win_h = min(WIN_H, _avail_h)
+_x = max(0, (_avail_w - _win_w) // 2)
+_y = max(0, (_avail_h - _win_h) // 2)
+root.geometry(f"{_win_w}x{_win_h}+{_x}+{_y}")
 
 # Make canvas expand to fill the window when resized
 root.rowconfigure(0, weight=1)
@@ -33,7 +50,12 @@ human_color = ui.show_start_menu()  # 'w' or 'b'
 ai_color = "b" if human_color == "w" else "w"
 
 chosen_depth = ui.show_depth_menu()  # 1-20
-ai = AlphaBetaEngine(depth=chosen_depth, time_limit=99999.0)  # No time limit
+ai = AlphaBetaEngine(depth=chosen_depth, time_limit=99999.0, verbose=True)  # No time limit
+# Lightweight engine used only to score the current position for the eval bar.
+analysis = AlphaBetaEngine(depth=8, time_limit=99999.0, verbose=False)
+# Opening book: fast, varied, principled openings before falling back to search.
+book = OpeningBook(ChessEngine)
+ply_counter = 0
 screen.title("Chess: Human vs AI")
 
 # If human is black, flip the board so black is at bottom
@@ -45,6 +67,7 @@ ui.init_pieces(engine.board)
 ui.draw_game_buttons()  # Add buttons
 ui.draw_captured_pieces([], [])
 ui.draw_game_buttons()
+ui.draw_move_list([])
 ui.update_status(engine.turn)
 screen.update()
 
@@ -56,6 +79,7 @@ capture_moves = []
 white_captured = []  # pieces white has captured (black piece codes like "bP")
 black_captured = []  # pieces black has captured (white piece codes like "wP")
 last_move = None     # (sr, sc, tr, tc) of the most recent move, for highlighting
+move_history_san = []  # SAN strings of every move played, for the panel + PGN
 piece_drag = {"candidate": None, "start_xy": None, "active": False}
 suppress_next_left_click = False
 
@@ -64,6 +88,66 @@ def refresh_captured():
     ui.draw_captured_pieces(white_captured, black_captured)
     # Keep action buttons above the captured panel redraw.
     ui.draw_game_buttons()
+
+
+def update_eval_bar():
+    """Score the current position with the analysis engine and update the bar."""
+    if engine.game_over:
+        if engine.winner == "w":
+            ui.draw_eval_bar(0, mate_in=1)
+        elif engine.winner == "b":
+            ui.draw_eval_bar(0, mate_in=-1)
+        else:
+            ui.draw_eval_bar(0)
+        return
+
+    analysis.get_best_move(engine)
+    sc = analysis.last_score
+    white_cp = sc if engine.turn == "w" else -sc
+    if abs(sc) >= 15000:
+        plies = 20000 - abs(sc)
+        white_mating = (engine.turn == "w") == (sc > 0)
+        ui.draw_eval_bar(white_cp, mate_in=(plies if white_mating else -plies))
+    else:
+        ui.draw_eval_bar(white_cp)
+
+
+def finish_move_record(base_san):
+    """Append the check/mate suffix (from the post-move engine state), store the
+    SAN, and redraw the move-list panel. Call right after engine.make_move."""
+    if engine.game_over and engine.winner in ("w", "b"):
+        base_san += "#"
+    elif engine.in_check(engine.turn):
+        base_san += "+"
+    move_history_san.append(base_san)
+    ui.draw_move_list(move_history_san)
+
+
+def export_pgn():
+    """Save the current game to a timestamped .pgn file next to the app."""
+    if not move_history_san:
+        return
+    if engine.game_over and engine.winner == "w":
+        result = "1-0"
+    elif engine.game_over and engine.winner == "b":
+        result = "0-1"
+    elif engine.game_over and engine.winner == "draw":
+        result = "1/2-1/2"
+    else:
+        result = "*"
+    white_name = "Human" if human_color == "w" else "ChessEngine AI"
+    black_name = "Human" if human_color == "b" else "ChessEngine AI"
+    pgn = notation.build_pgn(move_history_san, white_name, black_name, result)
+    fname = "game_" + datetime.datetime.now().strftime("%Y%m%d_%H%M%S") + ".pgn"
+    try:
+        with open(fname, "w", encoding="utf-8") as f:
+            f.write(pgn)
+        print(f"Saved PGN to {fname}")
+        old_title = "Chess: Human vs AI"
+        screen.title(f"Saved: {fname}")
+        screen.ontimer(lambda: screen.title(old_title), 2500)
+    except Exception as exc:
+        print(f"Failed to save PGN: {exc}")
 
 
 def canvas_event_to_screen(event):
@@ -143,7 +227,7 @@ def on_left_motion(event):
 
 def perform_human_move(sr, sc, r, c):
     """Execute a validated human move and run shared post-move UI updates."""
-    global selected, valid_moves, capture_moves, last_move
+    global selected, valid_moves, capture_moves, last_move, ply_counter
 
     # Track captures
     target_piece = engine.board[r][c]
@@ -183,12 +267,16 @@ def perform_human_move(sr, sc, r, c):
     # Promotion check
     if engine.board[sr][sc][1] == "P" and (r == 0 or r == 7):
         promo_char = ui.get_promotion_choice(engine.turn)
+        san_base = notation.move_to_san(engine, sr, sc, r, c, promo_char)
         ui.promote_piece_visual(r, c, engine.turn + promo_char)
         engine.make_move(sr, sc, r, c, promoted_piece=promo_char)
     else:
+        san_base = notation.move_to_san(engine, sr, sc, r, c)
         engine.make_move(sr, sc, r, c)
+    finish_move_record(san_base)
 
     ai.record_move((sr, sc, r, c))
+    ply_counter += 1
 
     # Highlight human's last move
     last_move = (sr, sc, r, c)
@@ -202,6 +290,7 @@ def perform_human_move(sr, sc, r, c):
     if capture_made:
         refresh_captured()
     ui.update_status(engine.turn, engine.game_over, engine.winner)
+    update_eval_bar()
     screen.update()
 
     # If game is over after human's move, show end-game menu
@@ -240,15 +329,19 @@ def on_left_release(event):
 
 # --- AI TURN HANDLER ---
 def play_ai_turn():
-    global last_move
+    global last_move, ply_counter
     if engine.game_over:
         return
 
-    screen.title("Chess - AI is thinking...")
-    screen.update()
-
-    # AI decides
-    move = ai.get_best_move(engine)
+    # Try the opening book first for an instant, principled move.
+    move = book.pick(engine, ply_counter)
+    if move is not None:
+        screen.title("Chess - AI (book move)")
+        screen.update()
+    else:
+        screen.title("Chess - AI is thinking...")
+        screen.update()
+        move = ai.get_best_move(engine)
 
     if move:
         sr, sc, tr, tc = move
@@ -288,12 +381,16 @@ def play_ai_turn():
         # Promotion (AI always queens)
         if engine.board[sr][sc][1] == "P" and (tr == 0 or tr == 7):
             promo_color = "b" if ai_color == "b" else "w"
+            san_base = notation.move_to_san(engine, sr, sc, tr, tc, "Q")
             ui.promote_piece_visual(tr, tc, f"{promo_color}Q")
             engine.make_move(sr, sc, tr, tc, promoted_piece="Q")
         else:
+            san_base = notation.move_to_san(engine, sr, sc, tr, tc)
             engine.make_move(sr, sc, tr, tc)
+        finish_move_record(san_base)
 
         ai.record_move((sr, sc, tr, tc))
+        ply_counter += 1
 
         # Highlight the AI's last move
         last_move = (sr, sc, tr, tc)
@@ -302,6 +399,7 @@ def play_ai_turn():
         if capture_made:
             refresh_captured()
         ui.update_status(engine.turn, engine.game_over, engine.winner)
+        update_eval_bar()
         screen.title("Chess: Human vs AI")
         screen.update()
         
@@ -425,12 +523,15 @@ def show_end_game_menu():
 def restart_game():
     """Restart the game with new parameters."""
     global selected, valid_moves, capture_moves, last_move, human_color, ai_color, engine, ai
-    global white_captured, black_captured, piece_drag, suppress_next_left_click
-    
+    global white_captured, black_captured, piece_drag, suppress_next_left_click, ply_counter
+    global move_history_san
+
     # Reset variables
     selected = None
     valid_moves = []
     capture_moves = []
+    ply_counter = 0
+    move_history_san = []
     last_move = None
     white_captured = []
     black_captured = []
@@ -443,6 +544,7 @@ def restart_game():
     ui.clear_last_move_highlights()
     ui.clear_captured_display()
     ui.clear_game_buttons()
+    ui.clear_move_list()
     ui.init_pieces([["--"] * 8 for _ in range(8)])
     
     # Show menus again
@@ -452,7 +554,7 @@ def restart_game():
     
     # Reinitialize engine and AI
     engine = ChessEngine()
-    ai = AlphaBetaEngine(depth=chosen_depth, time_limit=99999.0)
+    ai = AlphaBetaEngine(depth=chosen_depth, time_limit=99999.0, verbose=True)
     
     # Flip board if needed
     ui.flipped = human_color == "b"
@@ -462,9 +564,11 @@ def restart_game():
     ui.init_pieces(engine.board)
     ui.draw_game_buttons()  # Add buttons
     refresh_captured()
+    ui.draw_move_list([])
     ui.update_status(engine.turn)
+    update_eval_bar()
     screen.update()
-    
+
     # If human is black, AI plays first
     if human_color == "b":
         screen.ontimer(play_ai_turn, 1000)
@@ -475,6 +579,8 @@ screen.onkey(on_flip, "f")
 screen.onkey(on_clear_annotations, "c")
 screen.onkey(on_clear_annotations, "C")
 screen.onkey(on_resign, "r")
+screen.onkey(export_pgn, "p")
+screen.onkey(export_pgn, "P")
 screen.onclick(on_click)
 raw_canvas.bind("<ButtonPress-1>", on_left_press, add="+")
 raw_canvas.bind("<B1-Motion>", on_left_motion, add="+")

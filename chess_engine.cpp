@@ -85,6 +85,95 @@ public:
     winner = "";
   }
 
+  // Load a position from FEN. Returns false on obviously malformed input.
+  bool load_fen(const string &fen) {
+    for (int i = 0; i < 2; i++) {
+      colors[i] = 0;
+      for (int j = 0; j < 6; j++)
+        pieces[i][j] = 0;
+    }
+
+    size_t pos = 0;
+    // 1. Piece placement (rank 8 -> row 0).
+    int r = 0, c = 0;
+    for (; pos < fen.size(); pos++) {
+      char ch = fen[pos];
+      if (ch == ' ')
+        break;
+      if (ch == '/') {
+        r++;
+        c = 0;
+        continue;
+      }
+      if (ch >= '1' && ch <= '8') {
+        c += ch - '0';
+        continue;
+      }
+      int col = (ch >= 'a' && ch <= 'z') ? BLACK : WHITE;
+      char up = (ch >= 'a' && ch <= 'z') ? (char)(ch - 32) : ch;
+      int piece;
+      switch (up) {
+      case 'P': piece = P; break;
+      case 'N': piece = N; break;
+      case 'B': piece = B; break;
+      case 'R': piece = R; break;
+      case 'Q': piece = Q; break;
+      case 'K': piece = K; break;
+      default: return false;
+      }
+      if (r < 0 || r > 7 || c < 0 || c > 7)
+        return false;
+      pieces[col][piece] |= (1ULL << (r * 8 + c));
+      c++;
+    }
+
+    while (pos < fen.size() && fen[pos] == ' ')
+      pos++;
+
+    // 2. Side to move.
+    turn_col = (pos < fen.size() && fen[pos] == 'b') ? BLACK : WHITE;
+    while (pos < fen.size() && fen[pos] != ' ')
+      pos++;
+    while (pos < fen.size() && fen[pos] == ' ')
+      pos++;
+
+    // 3. Castling rights.
+    castling = 0;
+    for (; pos < fen.size() && fen[pos] != ' '; pos++) {
+      switch (fen[pos]) {
+      case 'K': castling |= 1; break;
+      case 'Q': castling |= 2; break;
+      case 'k': castling |= 4; break;
+      case 'q': castling |= 8; break;
+      default: break; // '-' or unknown
+      }
+    }
+    while (pos < fen.size() && fen[pos] == ' ')
+      pos++;
+
+    // 4. En passant target square.
+    ep_square = -1;
+    if (pos < fen.size() && fen[pos] != '-' && fen[pos] != ' ') {
+      int file = fen[pos] - 'a';
+      int rank = -1;
+      if (pos + 1 < fen.size())
+        rank = fen[pos + 1] - '1'; // '1'..'8'
+      if (file >= 0 && file < 8 && rank >= 0 && rank < 8) {
+        int row = 7 - rank; // rank 1 -> row 7
+        ep_square = row * 8 + file;
+      }
+    }
+
+    colors[WHITE] = pieces[WHITE][P] | pieces[WHITE][N] | pieces[WHITE][B] |
+                    pieces[WHITE][R] | pieces[WHITE][Q] | pieces[WHITE][K];
+    colors[BLACK] = pieces[BLACK][P] | pieces[BLACK][N] | pieces[BLACK][B] |
+                    pieces[BLACK][R] | pieces[BLACK][Q] | pieces[BLACK][K];
+    occupied = colors[WHITE] | colors[BLACK];
+    game_over = false;
+    winner = "";
+    return true;
+  }
+
   // --- PYTHON / LEGACY COMPATIBILITY METHODS ---
 
   vector<vector<string>> get_board() const {
@@ -111,6 +200,51 @@ public:
       }
     }
     return b;
+  }
+
+  // Export current position as a FEN string (halfmove/fullmove counters are
+  // not tracked, so "0 1" is emitted for those fields).
+  string get_fen() const {
+    static const char *SYM[2][6] = {{"P", "N", "B", "R", "Q", "K"},
+                                    {"p", "n", "b", "r", "q", "k"}};
+    string fen;
+    for (int r = 0; r < 8; r++) {
+      int empty = 0;
+      for (int c = 0; c < 8; c++) {
+        U64 bit = 1ULL << (r * 8 + c);
+        int col = -1, pc = -1;
+        for (int cc = 0; cc < 2 && col < 0; cc++)
+          for (int pp = 0; pp < 6; pp++)
+            if (pieces[cc][pp] & bit) { col = cc; pc = pp; break; }
+        if (col < 0) {
+          empty++;
+        } else {
+          if (empty) { fen += char('0' + empty); empty = 0; }
+          fen += SYM[col][pc];
+        }
+      }
+      if (empty) fen += char('0' + empty);
+      if (r < 7) fen += '/';
+    }
+    fen += ' ';
+    fen += (turn_col == WHITE ? 'w' : 'b');
+    fen += ' ';
+    string cr;
+    if (castling & 1) cr += 'K';
+    if (castling & 2) cr += 'Q';
+    if (castling & 4) cr += 'k';
+    if (castling & 8) cr += 'q';
+    fen += cr.empty() ? "-" : cr;
+    fen += ' ';
+    if (ep_square >= 0 && ep_square < 64) {
+      int r = ep_square / 8, c = ep_square % 8;
+      fen += char('a' + c);
+      fen += char('1' + (7 - r));
+    } else {
+      fen += '-';
+    }
+    fen += " 0 1";
+    return fen;
   }
 
   string get_turn() const { return turn_col == WHITE ? "w" : "b"; }
@@ -488,6 +622,28 @@ public:
     return false;
   }
 
+  // Perft: count legal leaf nodes at a given depth. Correctness harness for
+  // move generation + make/unmake (does not touch search/eval).
+  uint64_t perft(int depth) {
+    if (depth <= 0)
+      return 1;
+    uint64_t nodes = 0;
+    int color = turn_col;
+    auto moves = get_pseudo_moves(color);
+    for (auto &m : moves) {
+      auto st = save_state();
+      int tc_save = turn_col;
+      make_move_fast(get<0>(m), get<1>(m), get<2>(m), get<3>(m), get<4>(m));
+      U64 king_bb = pieces[color][K];
+      bool illegal =
+          !king_bb || is_attacked(bb_ctzll(king_bb), enemy_col(color));
+      if (!illegal)
+        nodes += perft(depth - 1);
+      restore_state(st, tc_save);
+    }
+    return nodes;
+  }
+
   bool check_game_over() {
     if (insufficient_material()) {
       game_over = true;
@@ -619,7 +775,11 @@ public:
 
 #include "ai_engine.cpp"
 
-PYBIND11_MODULE(chess_engine_cpp, m) {
+#ifndef ENGINE_MODULE_NAME
+#define ENGINE_MODULE_NAME chess_engine_cpp
+#endif
+
+PYBIND11_MODULE(ENGINE_MODULE_NAME, m) {
   py::class_<ChessEngine>(m, "ChessEngine")
       .def(py::init<>())
       .def_property_readonly("board", &ChessEngine::get_board)
@@ -634,6 +794,9 @@ PYBIND11_MODULE(chess_engine_cpp, m) {
       .def("legal_moves", &ChessEngine::legal_moves_py)
       .def("has_legal_moves", &ChessEngine::has_legal_moves)
       .def("check_game_over", &ChessEngine::check_game_over)
+      .def("perft", &ChessEngine::perft)
+      .def("load_fen", &ChessEngine::load_fen)
+      .def("get_fen", &ChessEngine::get_fen)
       .def("make_move", &ChessEngine::make_move, py::arg("sr"), py::arg("sc"),
            py::arg("tr"), py::arg("tc"),
            py::arg("promoted_piece") = py::none());
@@ -643,6 +806,10 @@ PYBIND11_MODULE(chess_engine_cpp, m) {
            py::arg("time_limit") = 5.0)
       .def_readwrite("max_depth", &AlphaBetaEngine::max_depth)
       .def_readwrite("time_limit", &AlphaBetaEngine::time_limit)
+      .def_readwrite("verbose", &AlphaBetaEngine::verbose)
+      .def_readonly("last_score", &AlphaBetaEngine::last_score)
+      .def_readonly("completed_depth", &AlphaBetaEngine::completed_depth)
+      .def_readonly("nodes_searched", &AlphaBetaEngine::nodes_searched)
       .def("record_move", &AlphaBetaEngine::record_move)
       .def("get_best_move", &AlphaBetaEngine::get_best_move);
 }

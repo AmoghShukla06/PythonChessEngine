@@ -97,6 +97,8 @@ jobs:
             --hidden-import chess_engine_cpp \
             --hidden-import chess_engine_wrapper \
             --hidden-import ui \
+            --hidden-import opening_book \
+            --hidden-import notation \
             --hidden-import tkinter \
             --hidden-import _tkinter \
             --noconfirm --clean main.py
@@ -113,6 +115,8 @@ jobs:
             --hidden-import chess_engine_cpp `
             --hidden-import chess_engine_wrapper `
             --hidden-import ui `
+            --hidden-import opening_book `
+            --hidden-import notation `
             --hidden-import tkinter `
             --hidden-import _tkinter `
             --noconfirm --clean main.py
